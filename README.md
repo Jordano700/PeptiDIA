@@ -137,5 +137,3 @@ If you use PeptiDIA in your research, please cite:
 ```
 
 ---
-
-**Built for researchers, by researchers** 🧬
