@@ -3,7 +3,7 @@
   
   # PeptiDIA
   
-  **Advanced DIA Proteomics Analysis Platform**
+ 
 </div>
 
 **PeptiDIA** is a powerful web-based application for machine learning-enhanced peptide validation in DIA mass spectrometry data. It uses advanced algorithms to identify additional valid peptides from higher FDR data by leveraging comprehensive ground truth datasets.
@@ -130,7 +130,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 If you use PeptiDIA in your research, please cite:
 
 ```bibtex
-@software{peptidia2024,
+@software{peptidia,
   title={PeptiDIA: Machine Learning-Enhanced Peptide Validation for DIA Mass Spetrometry Data},
   author={[Your Name]},
   year={2025},
