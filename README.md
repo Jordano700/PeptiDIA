@@ -66,6 +66,7 @@ The interface walks you through each step - no guessing needed!
 
 ## Need Help?
 
+- 📚 **[Detailed Documentation](PEPTIDIA_GUIDE.md)** - Complete guide with examples
 - 🐛 Report issues on GitHub
 - 💡 Questions? Open an issue!
 
