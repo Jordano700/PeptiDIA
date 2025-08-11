@@ -1,8 +1,10 @@
 <div align="center">
-  <img src="PeptiDIA_logo.png" alt="PeptiDIA Logo" width="400"/>
+  <img src="peptidia_retro.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
+  
+  # PeptiDIA
+  
+  **Advanced DIA Proteomics Analysis Platform**
 </div>
-
-# 🧬 PeptiDIA
 
 **PeptiDIA** is a powerful web-based application for machine learning-enhanced peptide validation in DIA mass spectrometry data. It uses advanced algorithms to identify additional valid peptides from higher FDR data by leveraging comprehensive ground truth datasets.
 
