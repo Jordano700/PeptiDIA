@@ -2,6 +2,9 @@
 data/
 *.parquet
 
+# Project development files
+CLAUDE.md
+
 # Python cache
 __pycache__/
 *.py[cod]
