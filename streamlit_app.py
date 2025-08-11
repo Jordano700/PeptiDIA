@@ -1555,8 +1555,7 @@ def show_training_interface():
     st.markdown("---")
     
     # Discover available files
-    with st.spinner("🔍 Discovering available data files..."):
-        files_info = discover_available_files()
+    files_info = discover_available_files()
     
     # Sidebar configuration
     st.sidebar.markdown("## 🎛️ Analysis Configuration")
@@ -3660,21 +3659,24 @@ def show_inference_interface():
                 display_inference_results_with_tabs()
         return
     
-    # Load available models from run history
-    with st.spinner("🔍 Loading trained models..."):
-        available_models = load_trained_models_from_history()
+    # Load available models from run history (cached for performance)
+    @st.cache_data(ttl=60)  # Cache for 1 minute
+    def get_available_models():
+        return load_trained_models_from_history()
+    
+    available_models = get_available_models()
     
     if not available_models:
         st.warning("⚠️ No trained models found. Please train a model first in Training Mode.")
         return
     
-    # Get available methods and files (same as training mode)
-    with st.spinner("🔍 Discovering available data files..."):
-        files_info_by_dataset = discover_available_files_by_dataset()
-        available_methods = get_available_methods_by_dataset(files_info_by_dataset)
+    # Get available methods and files (cached for performance)
+    @st.cache_data(ttl=300)  # Cache for 5 minutes
+    def get_files_info_cached():
+        return discover_available_files_by_dataset(), discover_available_files()
     
-    # Dataset filtering for test method selection
-    files_info = discover_available_files()
+    files_info_by_dataset, files_info = get_files_info_cached()
+    available_methods = get_available_methods_by_dataset(files_info_by_dataset)
     
     # Cache dataset processing to avoid recomputing on every interaction
     @st.cache_data
