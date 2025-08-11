@@ -1,0 +1,42 @@
+# Enhanced Peptide Validator - Streamlit Requirements
+# Core web framework
+streamlit>=1.28.0
+
+# Data manipulation and analysis
+pandas>=1.5.0
+numpy>=1.24.0
+pyarrow>=10.0.0  # For .parquet file support
+
+# Interactive plotting and visualization
+plotly>=5.15.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Machine learning
+scikit-learn>=1.3.0
+xgboost>=1.7.0
+scipy>=1.10.0
+
+# Feature interpretation and model analysis
+shap>=0.42.0
+
+# File handling and utilities
+pathlib2>=2.3.7
+
+# Performance optimization (optional but recommended)
+numba>=0.56.0
+
+# GPU acceleration (optional)
+# cupy-cuda11x>=11.0.0  # Uncomment if CUDA 11.x available
+# cuml>=22.0.0          # Uncomment for GPU-accelerated ML
+
+# Optional: Enhanced UI components
+# streamlit-option-menu>=0.3.6      # Uncomment for enhanced menus
+# streamlit-plotly-events>=0.0.6    # Uncomment for interactive plots
+# streamlit-aggrid>=0.3.4           # Uncomment for enhanced tables
+
+# Development and testing (uncomment for development)
+# pytest>=7.0.0
+# black>=22.0.0
+# isort>=5.10.0
+# flake8>=5.0.0
