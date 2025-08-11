@@ -41,7 +41,7 @@ from file_discovery import discover_available_files, get_available_methods, get_
 from dataset_utils import discover_available_files_by_dataset, extract_method_from_filename, get_configured_methods, get_files_for_configured_method
 
 # Add the scripts directory to Python path for imports
-sys.path.append('/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/scripts')
+sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
 
 warnings.filterwarnings('ignore')
 
@@ -341,7 +341,7 @@ FEATURE_CATEGORY_DESCRIPTIONS = {
 
 def get_history_file_path():
     """Get the path to the persistent history file."""
-    history_dir = "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/history"
+    history_dir = os.path.join(os.path.dirname(__file__), "history")
     os.makedirs(history_dir, exist_ok=True)
     return os.path.join(history_dir, "run_history.json")
 
@@ -1561,6 +1561,79 @@ def show_training_interface():
     # Sidebar configuration
     st.sidebar.markdown("## 🎛️ Analysis Configuration")
     
+    # Model Management Interface (Training Mode)
+    with st.sidebar.expander("🗂️ Model Management", expanded=False):
+        st.markdown("**Manage Saved Models:**")
+        
+        # Get saved models from run history (same as inference mode)
+        saved_models = load_trained_models_from_history()
+        
+        if saved_models:
+            total_size = 0
+            for model in saved_models:
+                # Get model directory from results_dir  
+                results_dir = model['results_dir']
+                model_dir = os.path.join(results_dir, "saved_models") if results_dir else ""
+                
+                # Calculate model size
+                model_size = 0
+                try:
+                    if os.path.exists(model_dir):
+                        for root, dirs, files in os.walk(model_dir):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                if os.path.exists(file_path):
+                                    model_size += os.path.getsize(file_path)
+                        size_mb = model_size / (1024 * 1024)
+                        total_size += model_size
+                    else:
+                        size_mb = 0
+                except:
+                    size_mb = 0
+                
+                # Display model with delete button (same as inference mode)
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(f"{model['run_id']}")
+                    st.caption(f"📊 {size_mb:.1f} MB • FDR: {model['best_fdr']:.1f}% • Peptides: {model['best_peptides']}")
+                with col2:
+                    if st.button("🗑️", key=f"delete_{model['run_id']}_{model['timestamp']}", 
+                               help="Delete this training run and model"):
+                        # Delete both the results directory and from run history
+                        try:
+                            import shutil
+                            
+                            # Create backup directory
+                            deleted_dir = os.path.join(os.path.dirname(__file__), "deleted_models")
+                            os.makedirs(deleted_dir, exist_ok=True)
+                            
+                            # Move entire results directory to backup
+                            if os.path.exists(results_dir):
+                                backup_name = f"deleted_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model['run_id']}"
+                                backup_path = os.path.join(deleted_dir, backup_name)
+                                shutil.move(results_dir, backup_path)
+                            
+                            # Remove from run history
+                            if hasattr(st.session_state, 'run_history'):
+                                st.session_state.run_history = [r for r in st.session_state.run_history if r['run_id'] != model['run_id']]
+                                save_persistent_history(st.session_state.run_history)
+                            
+                            st.success("✅ Model and training run deleted!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Delete failed: {str(e)}")
+                
+                st.divider()
+            
+            # Total space summary
+            st.info(f"📦 {len(saved_models)} models • {total_size/(1024*1024):.1f} MB total")
+            
+        else:
+            st.info("No saved models found. Train models first!")
+        
+        # Note about deleted models
+        st.info("💡 Deleted models are backed up in deleted_models/ directory and can be manually restored if needed.")
+    
     # Comprehensive file listing in sidebar
     st.sidebar.markdown("### 📊 Available Data Files")
     
@@ -2029,13 +2102,13 @@ def show_training_interface():
         st.markdown("## 🔬 Training in Progress")
         
         # DNA loading animation
-        dna_gif_path = "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/dna_loading.gif"
+        dna_gif_path = os.path.join(os.path.dirname(__file__), "dna_loading.gif")
         
         # Check multiple possible locations for the DNA GIF
         possible_paths = [
             dna_gif_path,
-            "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/assets/dna_loading.gif",
-            "/home/jordano/dia_gradient_identification/dna_loading.gif",
+            os.path.join(os.path.dirname(__file__), "assets", "dna_loading.gif"),
+            os.path.join(os.path.dirname(__file__), "..", "dna_loading.gif"),
             "./assets/dna_loading.gif",
             "./dna_loading.gif"
         ]
@@ -3595,7 +3668,12 @@ def show_inference_interface():
         st.warning("⚠️ No trained models found. Please train a model first in Training Mode.")
         return
     
-    # Get available methods using the same validation as training mode
+    # Get available methods and files (same as training mode)
+    with st.spinner("🔍 Discovering available data files..."):
+        files_info_by_dataset = discover_available_files_by_dataset()
+        available_methods = get_available_methods_by_dataset(files_info_by_dataset)
+    
+    # Dataset filtering for test method selection
     files_info = discover_available_files()
     
     # Cache dataset processing to avoid recomputing on every interaction
@@ -4251,7 +4329,7 @@ def run_single_inference(config):
         
         # Create features (import from the validator script)
         import sys
-        sys.path.append('/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/scripts')
+        sys.path.append(os.path.join(os.path.dirname(__file__), 'scripts'))
         from flexible_peptide_validator import make_advanced_features
         
         X_test = make_advanced_features(test_data, show_details=False)

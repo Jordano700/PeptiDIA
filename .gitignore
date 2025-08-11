@@ -5,6 +5,15 @@ data/
 # Project development files
 CLAUDE.md
 
+# Results, models, and run history - keep local only
+results/
+history/
+run_history/
+saved_models/
+fdr_results/
+ultra_low_fdr_results/
+*.json
+
 # Python cache
 __pycache__/
 *.py[cod]

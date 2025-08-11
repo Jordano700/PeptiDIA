@@ -4,7 +4,7 @@
 # ================================================================================
 # This script launches the Streamlit web interface for peptide validation
 
-echo "🧬 Starting Interactive Peptide Validator..."
+echo "🧬 Starting PeptiDIA..."
 echo "🌐 The web interface will open automatically in your browser"
 echo ""
 

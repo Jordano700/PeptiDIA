@@ -345,7 +345,8 @@ def validate_ground_truth_files(method_name: str) -> bool:
                 return True  # Default to valid if no sample ID found
             
             # Check ground truth file
-            pattern = f'/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/data/{dataset_name}/long_gradient/FDR_1/*{sample_id}*FDR1.parquet'
+            data_dir = os.path.join(os.path.dirname(__file__), "data")
+            pattern = f'{data_dir}/{dataset_name}/long_gradient/FDR_1/*{sample_id}*FDR1.parquet'
             ground_truth_files = glob.glob(pattern)
             
             for file_path in ground_truth_files:
