@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="peptidia_retro.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
+  <img src="peptidia_official_logo.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
   
   # PeptiDIA
   **Find More Peptides in Your Data** 🧬
@@ -46,14 +46,13 @@ Then open your web browser to `http://localhost:8501`
 PeptiDIA has **3 simple modes** to guide you through the process:
 
 ### 1. 🔧 **Setup Mode**
-- Configure your datasets
+- Configure your datasets very easily
 - Set up ground truth matching
-- Tell PeptiDIA which files to compare
+
 
 ### 2. 🎯 **Training Mode** 
 - AI learns from your data
-- Creates smart models
-- Shows training progress
+- Shows training progress and results 
 
 ### 3. 🚀 **Inference Mode**
 - Apply trained models to find new peptides
@@ -66,7 +65,6 @@ The interface walks you through each step - no guessing needed!
 
 ## Need Help?
 
-- 📚 **[Detailed Documentation](PEPTIDIA_GUIDE.md)** - Complete guide with examples
 - 🐛 Report issues on GitHub
 - 💡 Questions? Open an issue!
 
