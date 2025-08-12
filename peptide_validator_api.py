@@ -83,7 +83,7 @@ class PeptideValidatorAPI:
             'colsample_bytree': 0.8,
             'random_state': 42,
             'tree_method': 'hist',
-            'device': 'cuda'
+            'device': self._detect_gpu_device()
         }
         
         self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
@@ -92,6 +92,22 @@ class PeptideValidatorAPI:
             ('Peak.Height', 'Ms1.Area'),
             ('Precursor.Quantity', 'Peak.Height')
         ]
+    
+    def _detect_gpu_device(self) -> str:
+        """Detect if GPU is available, fallback to CPU."""
+        try:
+            import xgboost as xgb
+            # Try to create a simple XGBoost model with GPU
+            test_model = xgb.XGBClassifier(device='cuda', n_estimators=1)
+            # Test with minimal data
+            import numpy as np
+            X_test = np.array([[1, 2], [3, 4]])
+            y_test = np.array([0, 1])
+            test_model.fit(X_test, y_test)
+            return 'cuda'
+        except Exception:
+            # Silently fallback to CPU for API
+            return 'cpu'
     
     def run_analysis(self, 
                     train_methods: List[str],
@@ -362,22 +378,27 @@ class PeptideValidatorAPI:
             
             # Look for direct mapping of this method
             if test_method in direct_rules:
-                target_gt_filename = direct_rules[test_method]
+                target_gt_filenames = direct_rules[test_method]
                 
-                # Find the exact ground truth file
-                print(f"DEBUG: Looking for ground truth method: '{target_gt_filename}'")
+                # Handle both single file (string) and multiple files (list) for backward compatibility
+                if isinstance(target_gt_filenames, str):
+                    target_gt_filenames = [target_gt_filenames]
+                
+                # Find the exact ground truth files
+                print(f"DEBUG: Looking for ground truth methods: {target_gt_filenames}")
                 available_methods = [gt_file['method'] for gt_file in dataset_gt_files]
                 print(f"DEBUG: Available ground truth methods: {available_methods}")
                 print(f"DEBUG: First few filenames: {[gt_file['filename'] for gt_file in dataset_gt_files[:3]]}")
                 
-                for gt_file in dataset_gt_files:
-                    if target_gt_filename == gt_file['method']:
-                        matched_files.append(gt_file['path'])
-                        print(f"Direct mapping: {test_method} -> {Path(gt_file['path']).name}")
-                        break
+                for target_gt_filename in target_gt_filenames:
+                    for gt_file in dataset_gt_files:
+                        if target_gt_filename == gt_file['method']:
+                            matched_files.append(gt_file['path'])
+                            print(f"Direct mapping: {test_method} -> {Path(gt_file['path']).name}")
+                            break
                 
                 if not matched_files:
-                    print(f"Warning: Direct mapping failed for {test_method} -> {target_gt_filename}, using all {dataset_name} files")
+                    print(f"Warning: Direct mapping failed for {test_method} -> {target_gt_filenames}, using all {dataset_name} files")
                     matched_files = [f['path'] for f in dataset_gt_files]
             else:
                 print(f"Warning: No direct mapping found for {test_method}, using all {dataset_name} files")
@@ -1069,8 +1090,7 @@ class PeptideValidatorAPI:
                     'Increase_Pct': increase_pct,
                     'False_Positives': fp,
                     'Total_Validated_Candidates': total_validated,
-                    'MCC': mcc,
-                    'Aggregation_Method': aggregation_method
+                    'MCC': mcc
                 })
                 
                 print(f"    Target {target_fdr:4.1f}%: {peptides:,} peptides, {actual_fdr:.1f}% FDR, {recovery_pct:.1f}% recovery")
@@ -1437,19 +1457,10 @@ Model Performance:
         
         # Save best results summary
         if 'results' in analysis_results and analysis_results['results']:
-            best_result = max(analysis_results['results'], 
-                            key=lambda x: x['Additional_Peptides'] if x['Actual_FDR'] <= 5.0 else 0)
-            
             summary_text = f"""
 🎯 PEPTIDE VALIDATION ANALYSIS SUMMARY
 ================================================================================
 Analysis completed: {analysis_results['metadata']['analysis_timestamp']}
-
-🏆 BEST RESULT:
-Target FDR: {best_result['Target_FDR']:.1f}%
-Additional Peptides: {best_result['Additional_Peptides']}
-Actual FDR: {best_result['Actual_FDR']:.1f}%
-Recovery Rate: {best_result['Recovery_Pct']:.1f}%
 
 📊 DATA SUMMARY:
 Baseline peptides: {analysis_results['summary']['baseline_peptides']:,}

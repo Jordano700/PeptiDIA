@@ -2070,6 +2070,8 @@ def show_training_interface():
         # Import the backend API
         from peptide_validator_api import run_peptide_validation
         import time
+        import contextlib
+        from io import StringIO
         
         # Progress tracking
         progress_log = []
@@ -2091,30 +2093,63 @@ def show_training_interface():
             'learning_rate': learning_rate,
             'max_depth': max_depth,
             'n_estimators': n_estimators,
-            'subsample': subsample
+            'subsample': subsample,
+            'device': device  # Use detected device
         }
         
-        # Run the actual analysis
+        # Run the actual analysis with suppressed verbose output
         start_time = time.time()
         
+        @contextlib.contextmanager
+        def suppress_verbose_output():
+            """Suppress verbose stdout output during analysis."""
+            original_stdout = sys.stdout
+            sys.stdout = StringIO()
+            try:
+                yield
+            finally:
+                sys.stdout = original_stdout
+        
+        # GPU detection info
+        def detect_and_display_gpu():
+            try:
+                import xgboost as xgb
+                # Try to create a simple XGBoost model with GPU
+                test_model = xgb.XGBClassifier(device='cuda', n_estimators=1)
+                # Test with minimal data
+                import numpy as np
+                X_test = np.array([[1, 2], [3, 4]])
+                y_test = np.array([0, 1])
+                test_model.fit(X_test, y_test)
+                st.success("🚀 GPU detected and will be used for faster training")
+                return 'cuda'
+            except Exception as e:
+                st.warning(f"⚠️ GPU not available, using CPU: {str(e)[:50]}...")
+                return 'cpu'
+        
+        # Detect compute device
+        device = detect_and_display_gpu()
+        
         try:
-            results = run_peptide_validation(
-                train_methods=train_methods,
-                test_method=test_method,
-                train_fdr_levels=train_fdrs,
-                test_fdr=test_fdr,
-                target_fdr_levels=target_fdrs,
-                xgb_params=xgb_params,
-                progress_callback=progress_callback,
-                feature_selection={
-                    'use_diann_quality': use_diann_quality,
-                    'use_sequence_features': use_sequence_features,
-                    'use_ms_features': use_ms_features,
-                    'use_statistical_features': use_statistical_features,
-                    'use_library_features': use_library_features,
-                    'excluded_features': excluded_feature_list
-                }
-            )
+            # Run analysis with suppressed verbose terminal output (UI progress unchanged)
+            with suppress_verbose_output():
+                results = run_peptide_validation(
+                    train_methods=train_methods,
+                    test_method=test_method,
+                    train_fdr_levels=train_fdrs,
+                    test_fdr=test_fdr,
+                    target_fdr_levels=target_fdrs,
+                    xgb_params=xgb_params,
+                    progress_callback=progress_callback,
+                    feature_selection={
+                        'use_diann_quality': use_diann_quality,
+                        'use_sequence_features': use_sequence_features,
+                        'use_ms_features': use_ms_features,
+                        'use_statistical_features': use_statistical_features,
+                        'use_library_features': use_library_features,
+                        'excluded_features': excluded_feature_list
+                    }
+                )
             
             end_time = time.time()
             runtime_minutes = (end_time - start_time) / 60
@@ -5415,7 +5450,7 @@ def show_setup_interface():
             
             # Create the visual connection interface
             st.markdown("### 🔗 Create Connections")
-            st.markdown("**For each training method, select which ground truth file it should use:**")
+            st.markdown("**For each training method, select which ground truth file(s) it should use:**")
             
             # Show ALL training methods in connections (no grouping or filtering)
             st.markdown(f"**Found {len(training_methods)} training methods to connect:**")
@@ -5466,50 +5501,51 @@ def show_setup_interface():
                     
                     with col3:
                         # Ground truth selection
-                        st.markdown("**Ground Truth File:**")
+                        st.markdown("**Ground Truth Files:**")
                         
-                        # Create options with full filenames
-                        gt_options = ["(no connection)"] + ground_truth_files
+                        # Create options with full filenames (no "no connection" option for multiselect)
+                        gt_options = ground_truth_files
                         
                         # Find current selection using the full method name
-                        current_connection = connections.get(method, "(no connection)")
-                        try:
-                            current_index = gt_options.index(current_connection)
-                        except ValueError:
-                            current_index = 0
+                        current_connections = connections.get(method, [])
+                        # Ensure current_connections is a list
+                        if isinstance(current_connections, str):
+                            current_connections = [current_connections] if current_connections != "(no connection)" else []
                         
                         # Use method name + index to ensure unique keys
-                        selected_gt = st.selectbox(
-                            f"Select ground truth file:",
+                        selected_gts = st.multiselect(
+                            f"Select ground truth files:",
                             options=gt_options,
-                            index=current_index,
+                            default=current_connections,
                             key=f"gt_select_{selected_dataset}_{i}_{hash(method) % 10000}",  # Unique key
-                            help=f"Select which ground truth file '{method}' should use for validation",
-                            label_visibility="collapsed"
+                            help=f"Select which ground truth files '{method}' should use for validation (can select multiple)",
+                            placeholder="Choose ground truth files..."
                         )
                         
                         # Update connections
-                        if selected_gt != "(no connection)":
-                            connections[method] = selected_gt
-                            st.session_state[f'connections_{selected_dataset}'][method] = selected_gt
+                        if selected_gts:
+                            connections[method] = selected_gts
+                            st.session_state[f'connections_{selected_dataset}'][method] = selected_gts
                             
-                            # Show connected ground truth visually
-                            st.markdown(f"""
-                            <div style="
-                                background: linear-gradient(135deg, #10B981, #34D399);
-                                color: white;
-                                padding: 12px;
-                                border-radius: 8px;
-                                font-size: 14px;
-                                word-wrap: break-word;
-                                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                            ">
-                                🎭 {selected_gt}
-                            </div>
-                            """, unsafe_allow_html=True)
+                            # Show connected ground truth files visually
+                            for idx, selected_gt in enumerate(selected_gts):
+                                st.markdown(f"""
+                                <div style="
+                                    background: linear-gradient(135deg, #10B981, #34D399);
+                                    color: white;
+                                    padding: 8px 12px;
+                                    border-radius: 8px;
+                                    font-size: 13px;
+                                    word-wrap: break-word;
+                                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                                    margin-bottom: 4px;
+                                ">
+                                    🎭 {selected_gt}
+                                </div>
+                                """, unsafe_allow_html=True)
                             
                             # Add to pattern rules for saving
-                            pattern_based_rules[method] = selected_gt
+                            pattern_based_rules[method] = selected_gts
                             
                         else:
                             # Remove connection
