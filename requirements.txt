@@ -1,4 +1,4 @@
-# Enhanced Peptide Validator - Streamlit Requirements
+# PeptiDIA - Streamlit Requirements
 # Core web framework
 streamlit>=1.28.0
 
@@ -35,8 +35,3 @@ numba>=0.56.0
 # streamlit-plotly-events>=0.0.6    # Uncomment for interactive plots
 # streamlit-aggrid>=0.3.4           # Uncomment for enhanced tables
 
-# Development and testing (uncomment for development)
-# pytest>=7.0.0
-# black>=22.0.0
-# isort>=5.10.0
-# flake8>=5.0.0
