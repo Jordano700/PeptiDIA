@@ -665,9 +665,525 @@ class PeptiDIACLI:
     def run_setup_mode(self):
         """Run setup mode for dataset configuration."""
         print(f"\n{Colors.BOLD}🔧 SETUP MODE{Colors.ENDC}")
-        print(f"{Colors.BLUE}This mode would configure dataset connections and ground truth mappings{Colors.ENDC}")
-        print(f"{Colors.WARNING}⚠️  Setup mode not yet implemented in CLI - use Streamlit interface{Colors.ENDC}")
-        return True
+        print(f"{Colors.CYAN}{'='*60}")
+        print(f"{Colors.BLUE}Configure ground truth mapping for your datasets{Colors.ENDC}")
+        print(f"{Colors.GREEN}No JSON editing required - guided CLI setup{Colors.ENDC}")
+        print()
+        
+        # Discover datasets
+        if not self.discover_datasets():
+            return False
+        
+        # Select dataset to configure
+        dataset = self.select_dataset()
+        if not dataset:
+            return False
+        
+        # Configure the dataset
+        return self.configure_dataset_setup(dataset)
+    
+    def configure_dataset_setup(self, dataset: str) -> bool:
+        """Configure dataset ground truth mapping."""
+        print(f"\n{Colors.BOLD}⚙️  CONFIGURING DATASET: {dataset}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*60}")
+        
+        dataset_info = self.available_files.get(dataset, {})
+        if not dataset_info:
+            print(f"{Colors.FAIL}❌ No data found for dataset {dataset}{Colors.ENDC}")
+            return False
+        
+        # Show dataset overview
+        self.show_dataset_overview(dataset, dataset_info)
+        
+        # Select file organization mode
+        file_mode = self.select_file_organization_mode()
+        if not file_mode:
+            return False
+        
+        # Get training methods and ground truth files
+        training_methods, ground_truth_files = self.organize_files_by_mode(dataset, dataset_info, file_mode)
+        
+        if not training_methods:
+            print(f"{Colors.FAIL}❌ No training methods found{Colors.ENDC}")
+            return False
+        
+        if not ground_truth_files:
+            print(f"{Colors.FAIL}❌ No ground truth files found{Colors.ENDC}")
+            return False
+        
+        # Select ground truth mapping strategy
+        strategy = self.select_ground_truth_strategy()
+        if not strategy:
+            return False
+        
+        # Create mapping configuration
+        mapping_config = self.create_mapping_configuration(strategy, training_methods, ground_truth_files)
+        
+        # Save configuration
+        return self.save_dataset_configuration(dataset, mapping_config, file_mode)
+    
+    def show_dataset_overview(self, dataset: str, dataset_info: dict):
+        """Display dataset file overview."""
+        print(f"\n{Colors.BLUE}📊 Dataset Overview: {dataset}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*50}")
+        
+        # Count files in each category
+        baseline_count = len(dataset_info.get('baseline', {}))
+        training_20_count = len(dataset_info.get('training', {}).get('20', {}))
+        training_50_count = len(dataset_info.get('training', {}).get('50', {}))
+        gt_count = len(dataset_info.get('ground_truth', {}))
+        
+        print(f"{Colors.GREEN}Baseline (1% FDR): {Colors.BOLD}{baseline_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Training (20% FDR): {Colors.BOLD}{training_20_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Training (50% FDR): {Colors.BOLD}{training_50_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Ground Truth: {Colors.BOLD}{gt_count:>2}{Colors.ENDC} methods")
+        print()
+    
+    def select_file_organization_mode(self) -> Optional[str]:
+        """Select how files should be organized."""
+        print(f"{Colors.BLUE}⚙️  File Organization Mode{Colors.ENDC}")
+        print(f"{Colors.GREEN}1. Individual Files{Colors.ENDC} - Each file is a separate method")
+        print(f"{Colors.GREEN}2. Triplicate Groups{Colors.ENDC} - Group files by method number")
+        print()
+        
+        while True:
+            try:
+                choice = input(f"{Colors.BOLD}Select organization mode (1-2): {Colors.ENDC}").strip()
+                
+                if choice == "1":
+                    print(f"{Colors.GREEN}✅ Selected: Individual Files mode{Colors.ENDC}")
+                    return "individual"
+                elif choice == "2":
+                    print(f"{Colors.GREEN}✅ Selected: Triplicate Groups mode{Colors.ENDC}")
+                    return "triplicates"
+                else:
+                    print(f"{Colors.WARNING}⚠️  Please enter 1 or 2{Colors.ENDC}")
+                    
+            except KeyboardInterrupt:
+                print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
+                return None
+    
+    def organize_files_by_mode(self, dataset: str, dataset_info: dict, file_mode: str) -> Tuple[List[str], List[str]]:
+        """Organize files based on selected mode."""
+        if file_mode == "individual":
+            return self.organize_individual_files(dataset_info)
+        else:  # triplicates
+            return self.organize_triplicate_files(dataset, dataset_info)
+    
+    def organize_individual_files(self, dataset_info: dict) -> Tuple[List[str], List[str]]:
+        """Organize files as individual methods."""
+        training_methods = []
+        
+        # Collect all training files
+        for fdr_level in ['20', '50']:
+            if fdr_level in dataset_info.get('training', {}):
+                methods = list(dataset_info['training'][fdr_level].keys())
+                training_methods.extend(methods)
+        
+        training_methods = sorted(list(set(training_methods)))
+        ground_truth_files = list(dataset_info.get('ground_truth', {}).keys())
+        
+        print(f"{Colors.BLUE}📋 File Organization Summary:{Colors.ENDC}")
+        print(f"  Training methods: {len(training_methods)}")
+        print(f"  Ground truth files: {len(ground_truth_files)}")
+        
+        return training_methods, ground_truth_files
+    
+    def organize_triplicate_files(self, dataset: str, dataset_info: dict) -> Tuple[List[str], List[str]]:
+        """Organize files into triplicate groups."""
+        print(f"\n{Colors.BLUE}🔍 Triplicate Grouping Configuration{Colors.ENDC}")
+        
+        # Get all individual files first to show to user
+        individual_training = []
+        for fdr_level in ['20', '50']:
+            if fdr_level in dataset_info.get('training', {}):
+                methods = list(dataset_info['training'][fdr_level].keys())
+                individual_training.extend(methods)
+        individual_training = sorted(list(set(individual_training)))
+        
+        individual_gt = list(dataset_info.get('ground_truth', {}).keys())
+        
+        # Show available files to help user understand what to search for
+        print(f"\n{Colors.CYAN}📋 Available Files in Dataset:{Colors.ENDC}")
+        print(f"{Colors.BLUE}Training Files ({len(individual_training)} total):{Colors.ENDC}")
+        
+        # Group and sort files to show patterns better
+        grouped_training = self.group_files_by_pattern(individual_training)
+        self.display_grouped_files(grouped_training, max_show=10)
+        
+        print(f"\n{Colors.BLUE}Ground Truth Files ({len(individual_gt)} total):{Colors.ENDC}")
+        grouped_gt = self.group_files_by_pattern(individual_gt)
+        self.display_grouped_files(grouped_gt, max_show=8)
+        
+        print(f"\n{Colors.GREEN}💡 Search Tips:{Colors.ENDC}")
+        print(f"  - Look for common patterns in filenames above")
+        print(f"  - Use numbers like '001', '002', '003' to group replicates")  
+        print(f"  - Use method identifiers like 'RD201', 'EV1107', etc.")
+        print(f"  - Each search term will create one group containing all matching files")
+        
+        print(f"\n{Colors.GREEN}Enter search terms to group files (one per line, empty line to finish):{Colors.ENDC}")
+        print()
+        
+        search_terms = []
+        while True:
+            try:
+                term = input(f"{Colors.BOLD}Enter search term (or press Enter to finish): {Colors.ENDC}").strip()
+                if not term:
+                    break
+                search_terms.append(term)
+                print(f"{Colors.GREEN}✅ Added search term: {term}{Colors.ENDC}")
+            except KeyboardInterrupt:
+                print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
+                return [], []
+        
+        if not search_terms:
+            print(f"{Colors.WARNING}⚠️  No search terms provided, using individual files{Colors.ENDC}")
+            return self.organize_individual_files(dataset_info)
+        
+        # Apply grouping logic
+        training_methods = []
+        ground_truth_files = []
+        
+        # Create copies of the file lists for grouping (already retrieved above)
+        available_training = individual_training.copy()
+        available_gt = individual_gt.copy()
+        
+        # Group training files
+        groups_created = 0
+        for search_term in search_terms:
+            group_name = f"{dataset}_Group_{search_term}"
+            matching_files = [f for f in available_training if search_term in f]
+            
+            if matching_files:
+                training_methods.append(group_name)
+                groups_created += 1
+                print(f"{Colors.GREEN}✅ Created group '{group_name}' with {len(matching_files)} files{Colors.ENDC}")
+                
+                # Remove matched files to avoid duplicates
+                for matched_file in matching_files:
+                    if matched_file in available_training:
+                        available_training.remove(matched_file)
+        
+        # Add remaining individual files
+        training_methods.extend(available_training)
+        
+        # Group ground truth files similarly
+        for search_term in search_terms:
+            group_name = f"{dataset}_Group_{search_term}"
+            matching_gt_files = [f for f in available_gt if search_term in f]
+            
+            if matching_gt_files:
+                ground_truth_files.append(group_name)
+                # Remove matched files
+                for matched_file in matching_gt_files:
+                    if matched_file in available_gt:
+                        available_gt.remove(matched_file)
+        
+        # Add remaining individual GT files
+        ground_truth_files.extend(available_gt)
+        
+        print(f"\n{Colors.BLUE}📋 Grouping Summary:{Colors.ENDC}")
+        print(f"  Groups created: {groups_created}")
+        print(f"  Total training methods: {len(training_methods)}")
+        print(f"  Total ground truth files: {len(ground_truth_files)}")
+        
+        return training_methods, ground_truth_files
+    
+    def select_ground_truth_strategy(self) -> Optional[str]:
+        """Select ground truth mapping strategy."""
+        print(f"\n{Colors.BLUE}🔗 Ground Truth Mapping Strategy{Colors.ENDC}")
+        print(f"{Colors.GREEN}1. Use All Ground Truth{Colors.ENDC} - All methods use all ground truth files (simple)")
+        print(f"{Colors.GREEN}2. Method-Specific Mapping{Colors.ENDC} - Each method maps to specific ground truth files")
+        print()
+        
+        while True:
+            try:
+                choice = input(f"{Colors.BOLD}Select mapping strategy (1-2): {Colors.ENDC}").strip()
+                
+                if choice == "1":
+                    print(f"{Colors.GREEN}✅ Selected: Use All Ground Truth (simple strategy){Colors.ENDC}")
+                    return "use_all_ground_truth"
+                elif choice == "2":
+                    print(f"{Colors.GREEN}✅ Selected: Method-Specific Mapping{Colors.ENDC}")
+                    return "method_specific"
+                else:
+                    print(f"{Colors.WARNING}⚠️  Please enter 1 or 2{Colors.ENDC}")
+                    
+            except KeyboardInterrupt:
+                print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
+                return None
+    
+    def create_mapping_configuration(self, strategy: str, training_methods: List[str], ground_truth_files: List[str]) -> dict:
+        """Create mapping configuration based on strategy."""
+        mapping_config = {
+            "_strategy": strategy
+        }
+        
+        if strategy == "use_all_ground_truth":
+            mapping_config["_description"] = "All training methods use all available ground truth files"
+            print(f"\n{Colors.BLUE}📝 Configuration: All methods will use all ground truth files{Colors.ENDC}")
+        
+        elif strategy == "method_specific":
+            print(f"\n{Colors.BLUE}📝 Method-Specific Mapping Configuration{Colors.ENDC}")
+            print(f"{Colors.CYAN}Connect each training method to its ground truth file(s):{Colors.ENDC}")
+            print()
+            
+            connections = {}
+            
+            for i, method in enumerate(training_methods):  # Map all methods manually
+                print(f"{Colors.BOLD}Training Method {i+1}: {method}{Colors.ENDC}")
+                print(f"{Colors.BLUE}Available ground truth files:{Colors.ENDC}")
+                
+                for j, gt_file in enumerate(ground_truth_files, 1):
+                    print(f"  {j}. {gt_file}")
+                
+                print(f"\n{Colors.GREEN}💡 Multi-select options:{Colors.ENDC}")
+                print(f"  • Single file: {Colors.CYAN}1{Colors.ENDC}")
+                print(f"  • Multiple files: {Colors.CYAN}1,2,3{Colors.ENDC} or {Colors.CYAN}1-3{Colors.ENDC}")
+                print(f"  • All files: {Colors.CYAN}all{Colors.ENDC}")
+                
+                while True:
+                    try:
+                        choice = input(f"{Colors.BOLD}Select ground truth file(s) (1-{len(ground_truth_files)}): {Colors.ENDC}").strip()
+                        
+                        if choice.lower() == 'all':
+                            selected_gts = ground_truth_files.copy()
+                        else:
+                            selected_indices = []
+                            
+                            # Parse comma-separated and range selections
+                            for part in choice.split(','):
+                                part = part.strip()
+                                if '-' in part and len(part.split('-')) == 2:
+                                    # Range selection (e.g., 1-3)
+                                    try:
+                                        start, end = map(int, part.split('-'))
+                                        selected_indices.extend(range(start, end + 1))
+                                    except ValueError:
+                                        raise ValueError(f"Invalid range: {part}")
+                                else:
+                                    # Single selection
+                                    selected_indices.append(int(part))
+                            
+                            # Validate selections
+                            valid_indices = [i for i in selected_indices if 1 <= i <= len(ground_truth_files)]
+                            
+                            if not valid_indices:
+                                print(f"{Colors.WARNING}⚠️  No valid selections. Please try again.{Colors.ENDC}")
+                                continue
+                            
+                            if len(valid_indices) != len(selected_indices):
+                                invalid = [i for i in selected_indices if i not in valid_indices]
+                                print(f"{Colors.WARNING}⚠️  Invalid selections ignored: {invalid}{Colors.ENDC}")
+                            
+                            selected_gts = [ground_truth_files[i-1] for i in valid_indices]
+                        
+                        connections[method] = selected_gts
+                        
+                        if len(selected_gts) == 1:
+                            print(f"{Colors.GREEN}✅ Mapped {method} → {selected_gts[0]}{Colors.ENDC}")
+                        else:
+                            print(f"{Colors.GREEN}✅ Mapped {method} → {len(selected_gts)} ground truth files:{Colors.ENDC}")
+                            for gt in selected_gts:
+                                print(f"    • {gt}")
+                        break
+                        
+                    except ValueError as e:
+                        print(f"{Colors.WARNING}⚠️  Invalid format: {e}. Use single numbers (1), ranges (1-3), or comma-separated (1,2,3){Colors.ENDC}")
+                    except KeyboardInterrupt:
+                        print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
+                        return {}
+                
+                print()
+            
+            # Add suggested matches to help user but let them choose
+            if len(training_methods) > 0:
+                print(f"\n{Colors.GREEN}💡 Pattern Suggestions (optional guidance):{Colors.ENDC}")
+                print(f"  - Look for similar endings in filenames")
+                print(f"  - 300SPD files often match with 30SPD files with same endings")
+                print(f"  - You have full control - choose what makes sense for your analysis")
+                print()
+            
+            mapping_config.update(connections)
+        
+        return mapping_config
+    
+    def find_intelligent_ground_truth_match(self, training_method: str, ground_truth_files: List[str]) -> Optional[str]:
+        """Find the best matching ground truth file based on filename patterns."""
+        
+        # Extract key identifiers from training method filename
+        # Look for patterns like C57_01, C46_01, etc. at the end of filenames
+        import re
+        
+        # Try to extract the ending pattern (like C57_01, GC7_C60_01, etc.)
+        training_patterns = []
+        
+        # Pattern 1: Look for pattern like C57_01, C46_01 at the end
+        match = re.search(r'[A-Z]+\d+_\d+$', training_method)
+        if match:
+            training_patterns.append(match.group())
+        
+        # Pattern 2: Look for pattern like GC7_C60_01, CTL_C57_01
+        match = re.search(r'[A-Z0-9]+_[A-Z]+\d+_\d+$', training_method)
+        if match:
+            training_patterns.append(match.group())
+        
+        # Pattern 3: Just the last few characters (numbers and letters)
+        match = re.search(r'[A-Z0-9_]+\d+$', training_method)
+        if match:
+            training_patterns.append(match.group())
+        
+        # Look for best match in ground truth files
+        best_match = None
+        best_score = 0
+        
+        for gt_file in ground_truth_files:
+            score = 0
+            
+            # Check if any extracted patterns appear in the ground truth filename
+            for pattern in training_patterns:
+                if pattern in gt_file:
+                    score += len(pattern)  # Longer matches get higher scores
+            
+            # Additional scoring for exact ending matches
+            for pattern in training_patterns:
+                if gt_file.endswith(pattern):
+                    score += 10  # Bonus for ending matches
+            
+            if score > best_score:
+                best_score = score
+                best_match = gt_file
+        
+        # Only return a match if we found a meaningful pattern match
+        if best_score >= 5:  # Minimum threshold for a good match
+            return best_match
+        
+        return None
+    
+    def group_files_by_pattern(self, files: List[str]) -> Dict[str, List[str]]:
+        """Group files by common ending patterns to show alignment."""
+        import re
+        from collections import defaultdict
+        
+        groups = defaultdict(list)
+        
+        for filename in files:
+            # Extract ending pattern for grouping
+            # Look for patterns like C57_01, GC7_C60_01, etc.
+            
+            pattern = "other"  # Default group
+            
+            # Try different pattern extractions
+            patterns_to_try = [
+                r'[A-Z]+\d+_\d+$',  # C57_01, C46_01
+                r'[A-Z0-9]+_[A-Z]+\d+_\d+$',  # GC7_C60_01, CTL_C57_01
+                r'[A-Z0-9_]+\d+$',  # More general ending
+            ]
+            
+            for pattern_regex in patterns_to_try:
+                match = re.search(pattern_regex, filename)
+                if match:
+                    pattern = match.group()
+                    break
+            
+            groups[pattern].append(filename)
+        
+        # Sort groups by pattern and files within groups
+        sorted_groups = {}
+        for pattern in sorted(groups.keys()):
+            sorted_groups[pattern] = sorted(groups[pattern])
+        
+        return sorted_groups
+    
+    def display_grouped_files(self, grouped_files: Dict[str, List[str]], max_show: int = 10):
+        """Display files grouped by patterns to show alignment."""
+        shown_count = 0
+        total_files = sum(len(files) for files in grouped_files.values())
+        
+        for pattern, files in grouped_files.items():
+            if shown_count >= max_show:
+                break
+                
+            if pattern != "other":
+                print(f"  {Colors.CYAN}Pattern '{pattern}':{Colors.ENDC}")
+                for file in files[:3]:  # Show first 3 files in each pattern
+                    print(f"    • {file}")
+                    shown_count += 1
+                    if shown_count >= max_show:
+                        break
+                if len(files) > 3:
+                    print(f"    • ... and {len(files) - 3} more with pattern '{pattern}'")
+            else:
+                # Show "other" files individually
+                for file in files:
+                    if shown_count >= max_show:
+                        break
+                    print(f"  • {file}")
+                    shown_count += 1
+        
+        if shown_count < total_files:
+            remaining = total_files - shown_count
+            print(f"  • ... and {remaining} more files")
+    
+    def save_dataset_configuration(self, dataset: str, mapping_config: dict, file_mode: str) -> bool:
+        """Save dataset configuration to file."""
+        import json
+        import os
+        
+        config_dir = f"data/{dataset}"
+        config_file = f"{config_dir}/dataset_config.json"
+        
+        # Create directory if it doesn't exist
+        os.makedirs(config_dir, exist_ok=True)
+        
+        # Load existing config or create new one
+        existing_config = {}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    existing_config = json.load(f)
+                print(f"{Colors.BLUE}📂 Loaded existing configuration{Colors.ENDC}")
+            except Exception as e:
+                print(f"{Colors.WARNING}⚠️  Could not load existing config: {e}{Colors.ENDC}")
+        
+        # Merge configurations
+        final_config = existing_config.copy()
+        final_config["ground_truth_mapping"] = mapping_config
+        final_config["file_organization_mode"] = file_mode
+        
+        # Add default values if missing
+        if "icon" not in final_config:
+            final_config["icon"] = "🧬"
+        if "instrument" not in final_config:
+            final_config["instrument"] = "Mass spectrometer"
+        if "description" not in final_config:
+            final_config["description"] = f"{dataset} proteomics analysis"
+        
+        # Save configuration
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(final_config, f, indent=2)
+            
+            print(f"\n{Colors.GREEN}✅ Configuration saved successfully!{Colors.ENDC}")
+            print(f"{Colors.BLUE}📁 Saved to: {config_file}{Colors.ENDC}")
+            
+            # Show summary
+            strategy = mapping_config.get("_strategy", "unknown")
+            print(f"\n{Colors.BOLD}📋 Configuration Summary:{Colors.ENDC}")
+            print(f"  Dataset: {dataset}")
+            print(f"  File mode: {file_mode}")
+            print(f"  Strategy: {strategy}")
+            
+            if strategy == "method_specific":
+                method_count = len([k for k in mapping_config.keys() if not k.startswith("_")])
+                print(f"  Mapped methods: {method_count}")
+            
+            print(f"\n{Colors.GREEN}🎉 Setup completed! You can now use Training Mode with this dataset.{Colors.ENDC}")
+            return True
+            
+        except Exception as e:
+            print(f"{Colors.FAIL}❌ Failed to save configuration: {e}{Colors.ENDC}")
+            return False
     
     def run_training_mode(self, dataset: str):
         """Run training mode for ML model training."""
@@ -694,43 +1210,90 @@ class PeptiDIACLI:
         return True
     
     def run(self):
-        """Main CLI workflow."""
+        """Main CLI workflow with continuous mode selection."""
         self.print_banner()
         
-        # Discover datasets
+        # Discover datasets once at startup
         if not self.discover_datasets():
             return 1
         
-        # Select mode
-        mode = self.select_mode()
-        if not mode:
-            print(f"{Colors.BLUE}👋 Goodbye!{Colors.ENDC}")
-            return 0
+        # Main loop - return to mode selection after each operation
+        while True:
+            # Select mode
+            mode = self.select_mode()
+            if not mode:
+                print(f"\n{Colors.GREEN}👋 Thank you for using PeptiDIA CLI! Goodbye!{Colors.ENDC}")
+                return 0
+            
+            try:
+                # Handle different modes
+                if mode == "setup":
+                    success = self.run_setup_mode()
+                    if success:
+                        print(f"\n{Colors.GREEN}🎉 Setup completed successfully!{Colors.ENDC}")
+                    else:
+                        print(f"\n{Colors.WARNING}⚠️  Setup was not completed{Colors.ENDC}")
+                
+                elif mode == "inference":
+                    success = self.run_inference_mode()
+                    if success:
+                        print(f"\n{Colors.GREEN}🎉 Inference completed successfully!{Colors.ENDC}")
+                    else:
+                        print(f"\n{Colors.WARNING}⚠️  Inference was not completed{Colors.ENDC}")
+                
+                elif mode == "training":
+                    # For training mode, select dataset
+                    dataset = self.select_dataset()
+                    if not dataset:
+                        print(f"\n{Colors.BLUE}↩️  Returning to main menu...{Colors.ENDC}")
+                        continue
+                    
+                    success = self.run_training_mode(dataset)
+                    if success:
+                        print(f"\n{Colors.GREEN}🎉 Training completed successfully!{Colors.ENDC}")
+                    else:
+                        print(f"\n{Colors.WARNING}⚠️  Training was not completed{Colors.ENDC}")
+                
+                # Ask if user wants to continue or quit
+                print(f"\n{Colors.CYAN}{'='*60}")
+                continue_choice = self.ask_continue_or_quit()
+                
+                if not continue_choice:
+                    print(f"\n{Colors.GREEN}👋 Thank you for using PeptiDIA CLI! Goodbye!{Colors.ENDC}")
+                    return 0
+                
+                # Clear screen for next operation (optional)
+                print("\n" * 2)
+                
+            except KeyboardInterrupt:
+                print(f"\n\n{Colors.BLUE}↩️  Returning to main menu...{Colors.ENDC}")
+                continue
+            except Exception as e:
+                print(f"\n{Colors.FAIL}❌ Unexpected error: {str(e)}{Colors.ENDC}")
+                print(f"{Colors.BLUE}↩️  Returning to main menu...{Colors.ENDC}")
+                continue
+    
+    def ask_continue_or_quit(self) -> bool:
+        """Ask user if they want to continue or quit."""
+        print(f"{Colors.BOLD}What would you like to do next?{Colors.ENDC}")
+        print(f"{Colors.GREEN}1. Return to main menu{Colors.ENDC} - Choose another mode")
+        print(f"{Colors.GREEN}2. Quit PeptiDIA CLI{Colors.ENDC} - Exit the application")
+        print()
         
-        # Handle setup and inference modes
-        if mode == "setup":
-            if not self.run_setup_mode():
-                return 1
-            print(f"\n{Colors.GREEN}✨ Thank you for using PeptiDIA CLI!{Colors.ENDC}")
-            return 0
-        elif mode == "inference":
-            if not self.run_inference_mode():
-                return 1
-            print(f"\n{Colors.GREEN}✨ Thank you for using PeptiDIA CLI!{Colors.ENDC}")
-            return 0
-        
-        # For training mode, continue with dataset selection
-        dataset = self.select_dataset()
-        if not dataset:
-            print(f"{Colors.BLUE}👋 Goodbye!{Colors.ENDC}")
-            return 0
-        
-        # Run training mode
-        if not self.run_training_mode(dataset):
-            return 1
-        
-        print(f"\n{Colors.GREEN}✨ Thank you for using PeptiDIA CLI!{Colors.ENDC}")
-        return 0
+        while True:
+            try:
+                choice = input(f"{Colors.BOLD}Enter your choice (1-2): {Colors.ENDC}").strip()
+                
+                if choice == "1" or choice.lower() in ['menu', 'main', 'm']:
+                    return True
+                elif choice == "2" or choice.lower() in ['quit', 'exit', 'q']:
+                    return False
+                else:
+                    print(f"{Colors.WARNING}⚠️  Please enter 1 or 2{Colors.ENDC}")
+                    
+            except KeyboardInterrupt:
+                print(f"\n{Colors.BLUE}Returning to main menu...{Colors.ENDC}")
+                return True
 
 def main():
     """Entry point for the CLI."""
