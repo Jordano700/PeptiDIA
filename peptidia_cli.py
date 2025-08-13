@@ -1205,9 +1205,724 @@ class PeptiDIACLI:
     def run_inference_mode(self):
         """Run inference mode with existing models."""
         print(f"\n{Colors.BOLD}🔮 INFERENCE MODE{Colors.ENDC}")
-        print(f"{Colors.BLUE}This mode would use existing trained models for inference{Colors.ENDC}")
-        print(f"{Colors.WARNING}⚠️  Inference mode not yet implemented in CLI{Colors.ENDC}")
-        return True
+        print(f"{Colors.CYAN}{'='*60}{Colors.ENDC}")
+        print(f"{Colors.BLUE}Use existing trained models for inference on new data{Colors.ENDC}")
+        
+        # Step 1: Discover available models
+        available_models = self._discover_trained_models()
+        if not available_models:
+            print(f"{Colors.FAIL}❌ No trained models found{Colors.ENDC}")
+            print(f"{Colors.WARNING}💡 Train a model first using Training Mode{Colors.ENDC}")
+            return False
+        
+        # Step 2: Select model
+        selected_model = self._select_trained_model(available_models)
+        if not selected_model:
+            return False
+        
+        # Step 3: Select test method and dataset
+        test_config = self._configure_inference_test(selected_model)
+        if not test_config:
+            return False
+        
+        # Step 4: Run inference analysis
+        success = self._run_inference_analysis(selected_model, test_config)
+        return success
+    
+    def _discover_trained_models(self) -> List[Dict]:
+        """Discover all available trained models (CLI and Streamlit)."""
+        models = []
+        
+        # Look for CLI models in results directory
+        results_dir = Path("results")
+        if results_dir.exists():
+            for cli_dir in results_dir.glob("CLI_RESULTS_*"):
+                model_dir = cli_dir / "saved_models"
+                config_file = cli_dir / "analysis_config.json"
+                
+                if model_dir.exists() and config_file.exists():
+                    try:
+                        # Load CLI configuration
+                        with open(config_file, 'r') as f:
+                            config = json.load(f)
+                        
+                        # Load model metadata
+                        metadata_file = model_dir / "model_metadata.json"
+                        if metadata_file.exists():
+                            with open(metadata_file, 'r') as f:
+                                metadata = json.load(f)
+                            
+                            # Extract best result for display
+                            best_result = None
+                            if 'training_results' in metadata:
+                                valid_results = [r for r in metadata['training_results'] if r['Actual_FDR'] <= 5.0]
+                                if not valid_results:
+                                    valid_results = metadata['training_results']
+                                if valid_results:
+                                    best_result = max(valid_results, key=lambda x: x['Additional_Peptides'])
+                            
+                            model_info = {
+                                'id': cli_dir.name,
+                                'type': 'CLI',
+                                'timestamp': cli_dir.name.replace('CLI_RESULTS_', ''),
+                                'config': config,
+                                'metadata': metadata,
+                                'model_dir': str(model_dir),
+                                'best_result': best_result,
+                                'train_methods': config.get('train_methods', []),
+                                'test_method': config.get('test_method', ''),
+                                'dataset': config.get('dataset', 'Unknown')
+                            }
+                            models.append(model_info)
+                    except Exception as e:
+                        print(f"{Colors.WARNING}⚠️  Could not load CLI model {cli_dir.name}: {e}{Colors.ENDC}")
+        
+        # Look for Streamlit models in results directory
+        for streamlit_dir in results_dir.glob("STREAMLIT_RESULTS_*"):
+            model_dir = streamlit_dir / "saved_models"
+            if model_dir.exists():
+                try:
+                    # Check for model files
+                    model_file = model_dir / "trained_model.joblib"
+                    metadata_file = model_dir / "model_metadata.json"
+                    
+                    if model_file.exists() and metadata_file.exists():
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+                        
+                        # Try to load actual method information from analysis summary
+                        train_methods = ['Streamlit Training']
+                        test_method = 'Streamlit Testing'
+                        dataset = 'Streamlit'
+                        
+                        summary_file = streamlit_dir / "ANALYSIS_SUMMARY.txt"
+                        if summary_file.exists():
+                            try:
+                                with open(summary_file, 'r') as f:
+                                    summary_content = f.read()
+                                
+                                # Extract training methods
+                                for line in summary_content.split('\n'):
+                                    if 'Training methods:' in line:
+                                        methods_str = line.split('Training methods:')[1].strip()
+                                        train_methods = [m.strip() for m in methods_str.split(',')]
+                                    elif 'Test method:' in line:
+                                        test_method = line.split('Test method:')[1].strip()
+                                
+                                # Extract dataset from first training method
+                                if train_methods and train_methods[0] != 'Streamlit Training':
+                                    dataset = train_methods[0].split('_')[0]  # e.g., ASTRAL_Group_001 -> ASTRAL
+                                    
+                            except Exception as e:
+                                print(f"{Colors.WARNING}⚠️  Could not parse summary for {streamlit_dir.name}: {e}{Colors.ENDC}")
+                        
+                        model_info = {
+                            'id': streamlit_dir.name,
+                            'type': 'Streamlit',
+                            'timestamp': streamlit_dir.name.replace('STREAMLIT_RESULTS_', ''),
+                            'model_dir': str(model_dir),
+                            'metadata': metadata,
+                            'train_methods': train_methods,
+                            'test_method': test_method,
+                            'dataset': dataset
+                        }
+                        models.append(model_info)
+                except Exception as e:
+                    print(f"{Colors.WARNING}⚠️  Could not load Streamlit model {streamlit_dir.name}: {e}{Colors.ENDC}")
+        
+        # Sort by timestamp (newest first)
+        models.sort(key=lambda x: x['timestamp'], reverse=True)
+        return models
+    
+    def _select_trained_model(self, available_models: List[Dict]) -> Optional[Dict]:
+        """Allow user to select from available trained models."""
+        print(f"\n{Colors.BOLD}📋 Available Trained Models:{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*80}{Colors.ENDC}")
+        
+        for i, model in enumerate(available_models, 1):
+            source_icon = "🖥️" if model['type'] == 'CLI' else "🌐"
+            timestamp_display = model['timestamp'][:8] + '_' + model['timestamp'][8:]  # Format: YYYYMMDD_HHMMSS
+            
+            # Show basic info
+            print(f"{Colors.BOLD}{i:2d}. {source_icon} {model['id']}{Colors.ENDC}")
+            print(f"     📅 {timestamp_display} | 🏗️  {model['type']} | 📊 {model['dataset']}")
+            
+            # Show training methods
+            train_methods = ', '.join(model['train_methods'][:2])  # Show first 2 methods
+            if len(model['train_methods']) > 2:
+                train_methods += f" (+ {len(model['train_methods']) - 2} more)"
+            print(f"     🏋️  Train: {train_methods}")
+            print(f"     🧪 Test: {model['test_method']}")
+            
+            # Show performance summary
+            if model['type'] == 'CLI' and model.get('best_result'):
+                best = model['best_result']
+                print(f"     🎯 Best: {best['Additional_Peptides']} peptides @ {best['Actual_FDR']:.1f}% FDR")
+            elif model['type'] == 'Streamlit' and 'metadata' in model and 'training_results' in model['metadata']:
+                # Show Streamlit model performance
+                training_results = model['metadata']['training_results']
+                if training_results:
+                    best = max(training_results, key=lambda x: x.get('Additional_Peptides', 0))
+                    print(f"     🎯 Best: {best.get('Additional_Peptides', 0)} peptides @ {best.get('Actual_FDR', 0):.1f}% FDR")
+            
+            print()
+        
+        # Get user selection
+        while True:
+            try:
+                choice = input(f"{Colors.BLUE}Select model (1-{len(available_models)}), 'd' for details, or 'q' to quit: {Colors.ENDC}")
+                if choice.lower() == 'q':
+                    return None
+                elif choice.lower() == 'd':
+                    # Show detailed training results
+                    model_choice = input(f"{Colors.BLUE}Enter model number to view training details: {Colors.ENDC}")
+                    try:
+                        model_idx = int(model_choice) - 1
+                        if 0 <= model_idx < len(available_models):
+                            # Show details and handle navigation - both 'c' and 'b' return to model selection
+                            self._display_model_training_details(available_models[model_idx])
+                        else:
+                            print(f"{Colors.WARNING}⚠️  Invalid model number{Colors.ENDC}")
+                    except ValueError:
+                        print(f"{Colors.WARNING}⚠️  Please enter a valid number{Colors.ENDC}")
+                    # Always continue to show model selection again after viewing details
+                    continue
+                
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(available_models):
+                    selected = available_models[choice_idx]
+                    
+                    # Show model details and handle user navigation
+                    print(f"\n{Colors.GREEN}✅ Selected: {selected['id']}{Colors.ENDC}")
+                    
+                    # Show training details and get user choice
+                    wants_to_continue = self._display_model_training_details(selected)
+                    
+                    if wants_to_continue:
+                        # User pressed 'c' to continue - they want to use this model
+                        return selected
+                    else:
+                        # User pressed 'b' to go back from training details, return to model list
+                        continue
+                else:
+                    print(f"{Colors.FAIL}❌ Invalid selection. Please choose 1-{len(available_models)}{Colors.ENDC}")
+            except ValueError:
+                print(f"{Colors.FAIL}❌ Please enter a valid number{Colors.ENDC}")
+            except KeyboardInterrupt:
+                return None
+    
+    def _display_model_training_details(self, model: Dict) -> bool:
+        """Display detailed training results for a model, like in Streamlit.
+        
+        Returns:
+            bool: True if user wants to continue with this model, False if they want to go back
+        """
+        print(f"\n{Colors.BOLD}📊 Training Details: {model['id']}{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*100}{Colors.ENDC}")
+        
+        # Show model info
+        print(f"{Colors.BOLD}Model Type:{Colors.ENDC} {model['type']}")
+        print(f"{Colors.BOLD}Dataset:{Colors.ENDC} {model.get('dataset', 'Unknown')}")
+        print(f"{Colors.BOLD}Training Methods:{Colors.ENDC} {', '.join(model['train_methods'])}")
+        print(f"{Colors.BOLD}Test Method:{Colors.ENDC} {model['test_method']}")
+        
+        # Get training results
+        training_results = []
+        if model['type'] == 'CLI' and 'metadata' in model and 'training_results' in model['metadata']:
+            training_results = model['metadata']['training_results']
+        elif model['type'] == 'Streamlit' and 'metadata' in model and 'training_results' in model['metadata']:
+            training_results = model['metadata']['training_results']
+        
+        if training_results:
+            print(f"\n{Colors.BOLD}Training Results:{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Pos':<10} {'MCC':<10}"
+            print(f"{Colors.BOLD}{header}{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+            
+            for result in training_results:
+                actual_fdr = f"{result.get('Actual_FDR', 0):.1f}"
+                recovery = f"{result.get('Recovery_Pct', 0):.1f}"
+                increase = f"{result.get('Increase_Pct', 0):.1f}"
+                false_pos = result.get('False_Positives', 0)
+                mcc = f"{result.get('MCC', 0):.3f}"
+                
+                print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} "
+                      f"{actual_fdr:<12} {recovery:<12} {increase:<12} {false_pos:<10,d} {mcc:<10}")
+            
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+        else:
+            print(f"\n{Colors.WARNING}⚠️  No training results available for this model{Colors.ENDC}")
+        
+        while True:
+            choice = input(f"\n{Colors.BLUE}Press 'c' to continue or 'b' to go back: {Colors.ENDC}")
+            if choice.lower() in ['c', 'continue']:
+                return True  # User wants to continue with this model
+            elif choice.lower() in ['b', 'back']:
+                return False  # User wants to go back to model selection
+            else:
+                print(f"{Colors.WARNING}⚠️  Please enter 'c' for continue or 'b' for go back{Colors.ENDC}")
+    
+    def _configure_inference_test(self, selected_model: Dict) -> Optional[Dict]:
+        """Configure test settings for inference."""
+        print(f"\n{Colors.BOLD}🔧 Configure Inference Test:{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*50}{Colors.ENDC}")
+        
+        # Step 1: Select dataset for inference
+        dataset = self.select_dataset()
+        if not dataset:
+            print(f"\n{Colors.BLUE}↩️  Returning to model selection...{Colors.ENDC}")
+            return None
+        
+        # Step 2: Display configured methods for the selected dataset
+        available_methods = self.display_configured_methods(dataset)
+        if not available_methods:
+            return None
+        
+        # Step 3: Select test method (use configured methods as-is, whether individual or groups)
+        print(f"\n{Colors.BOLD}🧪 Test Method Selection{Colors.ENDC}")
+        print(f"{Colors.BLUE}Select ONE test method/group for inference{Colors.ENDC}")
+        
+        # Check if methods are groups or individual
+        has_groups = any('Group' in method or len([m for m in available_methods if method.split('_')[0] in m]) > 1 
+                        for method in available_methods)
+        
+        if has_groups:
+            print(f"{Colors.CYAN}💡 This dataset uses pre-configured groups (including triplicates){Colors.ENDC}")
+        else:
+            print(f"{Colors.CYAN}💡 This dataset uses individual methods{Colors.ENDC}")
+        
+        while True:
+            try:
+                choice = input(f"{Colors.BOLD}Select test method (1-{len(available_methods)}): {Colors.ENDC}")
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(available_methods):
+                    test_method = available_methods[choice_idx]
+                    print(f"{Colors.GREEN}✅ Selected: {test_method}{Colors.ENDC}")
+                    break
+                else:
+                    print(f"{Colors.WARNING}⚠️  Please enter a number between 1 and {len(available_methods)}{Colors.ENDC}")
+                    
+            except ValueError:
+                print(f"{Colors.WARNING}⚠️  Please enter a valid number{Colors.ENDC}")
+            except KeyboardInterrupt:
+                print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
+                return None
+        
+        # Select test FDR
+        fdr_options = [20, 50]
+        print(f"\n{Colors.BOLD}Test FDR Level:{Colors.ENDC}")
+        for i, fdr in enumerate(fdr_options, 1):
+            print(f"{i}. {fdr}%")
+        
+        while True:
+            try:
+                choice = input(f"{Colors.BLUE}Select FDR level (1-{len(fdr_options)}): {Colors.ENDC}")
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(fdr_options):
+                    test_fdr = fdr_options[choice_idx]
+                    break
+                else:
+                    print(f"{Colors.FAIL}❌ Invalid selection{Colors.ENDC}")
+            except (ValueError, KeyboardInterrupt):
+                return None
+        
+        # Get target FDR levels from the trained model
+        model_target_fdrs = []
+        if 'config' in selected_model and 'target_fdr_levels' in selected_model['config']:
+            model_target_fdrs = selected_model['config']['target_fdr_levels']
+        elif 'metadata' in selected_model and 'training_results' in selected_model['metadata']:
+            # Extract from training results
+            model_target_fdrs = [result['Target_FDR'] for result in selected_model['metadata']['training_results']]
+        
+        if model_target_fdrs:
+            print(f"\n{Colors.BOLD}Target FDR Levels for Optimization:{Colors.ENDC}")
+            print(f"{Colors.GREEN}Using model's training FDRs: {', '.join(map(str, model_target_fdrs))}%{Colors.ENDC}")
+            target_fdrs = model_target_fdrs
+        else:
+            # Fallback to default if no model FDRs found
+            default_targets = [1.0, 2.0, 3.0, 4.0, 5.0]
+            print(f"\n{Colors.BOLD}Target FDR Levels for Optimization:{Colors.ENDC}")
+            print(f"{Colors.WARNING}Model FDRs not found, using default: {', '.join(map(str, default_targets))}%{Colors.ENDC}")
+            target_fdrs = default_targets
+        
+        config = {
+            'test_method': test_method,  # Single test method (can be individual or group)
+            'test_fdr': test_fdr,
+            'target_fdr_levels': target_fdrs,
+            'dataset': dataset
+        }
+        
+        print(f"\n{Colors.GREEN}✅ Test Configuration:{Colors.ENDC}")
+        print(f"   🧪 Test Method: {test_method}")
+        print(f"   📊 Test FDR: {test_fdr}%")
+        print(f"   🎯 Target FDRs: {', '.join(map(str, target_fdrs))}%")
+        
+        return config
+    
+    def _run_inference_analysis(self, selected_model: Dict, test_config: Dict) -> bool:
+        """Run the actual inference analysis."""
+        print(f"\n{Colors.BOLD}🔮 Running Inference Analysis{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*60}{Colors.ENDC}")
+        
+        try:
+            # Import required modules
+            import joblib
+            
+            # Load the trained model configuration
+            model_dir = Path(selected_model['model_dir'])
+            model_file = model_dir / "trained_model.joblib"
+            features_file = model_dir / "training_features.joblib"
+            
+            # Get feature selection configuration from the model
+            feature_selection = {}
+            if 'config' in selected_model:
+                feature_selection = selected_model['config'].get('feature_selection', {})
+            elif 'metadata' in selected_model:
+                # For Streamlit models, use default feature selection
+                feature_selection = {
+                    'use_diann_quality': True,
+                    'use_sequence_features': True,
+                    'use_ms_features': True,
+                    'use_statistical_features': True,
+                    'use_library_features': True,
+                    'excluded_features': []
+                }
+            
+            # Initialize API with feature selection
+            api = PeptideValidatorAPI()
+            api.feature_selection = feature_selection
+            
+            if not model_file.exists():
+                print(f"{Colors.FAIL}❌ Model file not found: {model_file}{Colors.ENDC}")
+                return False
+            
+            if not features_file.exists():
+                print(f"{Colors.FAIL}❌ Features file not found: {features_file}{Colors.ENDC}")
+                return False
+            
+            print(f"{Colors.BLUE}📁 Loading model: {model_file.name}{Colors.ENDC}")
+            trained_model = joblib.load(model_file)
+            training_features = joblib.load(features_file)
+            
+            # Load test data
+            print(f"{Colors.BLUE}📊 Loading test data: {test_config['test_method']}{Colors.ENDC}")
+            
+            # Get test data files
+            from dataset_utils import get_files_for_configured_method
+            test_files = get_files_for_configured_method(test_config['test_method'], test_config['test_fdr'])
+            
+            if not test_files:
+                print(f"{Colors.FAIL}❌ No test data files found for {test_config['test_method']} at {test_config['test_fdr']}% FDR{Colors.ENDC}")
+                return False
+            
+            # Load and combine test data
+            test_data_frames = []
+            for file_path in test_files:
+                try:
+                    df = pd.read_parquet(file_path)
+                    df['source_fdr'] = test_config['test_fdr']
+                    test_data_frames.append(df)
+                    print(f"   📄 Loaded: {Path(file_path).name} ({len(df):,} rows)")
+                except Exception as e:
+                    print(f"{Colors.WARNING}⚠️  Could not load {file_path}: {e}{Colors.ENDC}")
+            
+            if not test_data_frames:
+                print(f"{Colors.FAIL}❌ No valid test data loaded{Colors.ENDC}")
+                return False
+            
+            test_data = pd.concat(test_data_frames, ignore_index=True)
+            print(f"{Colors.GREEN}✅ Combined test data: {len(test_data):,} rows{Colors.ENDC}")
+            
+            # Try to load ground truth for proper statistics
+            ground_truth = None
+            try:
+                ground_truth_data = api._load_ground_truth_peptides(test_config['test_method'])
+                if ground_truth_data is not None and len(ground_truth_data) > 0:
+                    ground_truth = ground_truth_data
+                    print(f"{Colors.GREEN}✅ Loaded ground truth: {len(ground_truth):,} validated peptides{Colors.ENDC}")
+                else:
+                    print(f"{Colors.WARNING}⚠️  No ground truth available for {test_config['test_method']}{Colors.ENDC}")
+            except Exception as e:
+                print(f"{Colors.WARNING}⚠️  Could not load ground truth: {e}{Colors.ENDC}")
+            
+            # Load baseline peptides for proper Increase % calculation
+            baseline_peptides = None
+            baseline_count = 0
+            try:
+                baseline_peptides = api._load_baseline_peptides(test_config['test_method'])
+                if baseline_peptides is not None:
+                    baseline_count = len(baseline_peptides)
+                    print(f"{Colors.GREEN}✅ Loaded baseline peptides: {baseline_count:,} peptides{Colors.ENDC}")
+                else:
+                    print(f"{Colors.WARNING}⚠️  No baseline peptides available{Colors.ENDC}")
+            except Exception as e:
+                print(f"{Colors.WARNING}⚠️  Could not load baseline peptides: {e}{Colors.ENDC}")
+                # Use ground truth size as fallback
+                if ground_truth is not None:
+                    baseline_count = len(ground_truth)
+                    print(f"{Colors.WARNING}⚠️  Using ground truth size as baseline: {baseline_count:,}{Colors.ENDC}")
+            
+            # Create features for test data
+            print(f"{Colors.BLUE}🔧 Creating features for inference...{Colors.ENDC}")
+            X_test = api._make_advanced_features(test_data, training_features)
+            
+            # Ensure features match training
+            if isinstance(training_features, list):
+                training_features_list = training_features
+            else:
+                training_features_list = training_features.tolist()
+            
+            missing_features = set(training_features_list) - set(X_test.columns)
+            if missing_features:
+                print(f"{Colors.WARNING}⚠️  Adding missing features: {len(missing_features)} features{Colors.ENDC}")
+                for feature in missing_features:
+                    X_test[feature] = 0
+            
+            # Reorder columns to match training
+            X_test = X_test[training_features_list]
+            
+            print(f"{Colors.GREEN}✅ Feature matrix ready: {X_test.shape[0]:,} samples × {X_test.shape[1]} features{Colors.ENDC}")
+            
+            # Make predictions
+            print(f"{Colors.BLUE}🎯 Making predictions...{Colors.ENDC}")
+            y_pred = trained_model.predict_proba(X_test)[:, 1]
+            
+            # Run optimization for different FDR targets (suppress verbose output)
+            print(f"{Colors.BLUE}📈 Optimizing thresholds for target FDRs...{Colors.ENDC}")
+            
+            # Calculate results with proper statistics
+            results = []
+            with self._suppress_verbose_output():
+                for target_fdr in test_config['target_fdr_levels']:
+                    try:
+                        if ground_truth is not None:
+                            # Use ground truth for proper statistics calculation (like Streamlit)
+                            # Create peptide-level aggregation like in the main API
+                            aggregation_method = 'max'  # Default
+                            if 'config' in selected_model and 'aggregation_method' in selected_model['config']:
+                                aggregation_method = selected_model['config']['aggregation_method']
+                            
+                            # Create peptide predictions using the same process as training
+                            # Create labels for test data based on ground truth
+                            test_peptides = test_data['Stripped.Sequence'].values
+                            peptide_labels = pd.Series([peptide in ground_truth for peptide in test_peptides])
+                            
+                            # Aggregate predictions by peptide
+                            peptide_df, peptide_predictions, peptide_labels = api._aggregate_predictions_by_peptide(
+                                test_data, y_pred, peptide_labels, aggregation_method
+                            )
+                            
+                            # Use the same threshold optimization as training
+                            threshold, additional_peptides, actual_fdr = api._find_optimal_threshold(
+                                peptide_labels, peptide_predictions, target_fdr
+                            )
+                            
+                            if threshold is not None:
+                                # Calculate metrics like in training
+                                total_validated = peptide_labels.sum()
+                                recovery_pct = additional_peptides / total_validated * 100 if total_validated > 0 else 0
+                                increase_pct = additional_peptides / baseline_count * 100 if baseline_count > 0 else 0
+                                
+                                # Calculate MCC
+                                predictions = peptide_predictions >= threshold
+                                tp = (peptide_labels & predictions).sum()
+                                fp = (~peptide_labels & predictions).sum()
+                                
+                                # MCC calculation
+                                from sklearn.metrics import matthews_corrcoef
+                                mcc = matthews_corrcoef(peptide_labels, predictions)
+                                
+                                result = {
+                                    'Target_FDR': target_fdr,
+                                    'Threshold': threshold,
+                                    'Additional_Peptides': additional_peptides,
+                                    'Actual_FDR': actual_fdr,
+                                    'Recovery_Pct': recovery_pct,
+                                    'Increase_Pct': increase_pct,
+                                    'False_Positives': fp,
+                                    'Total_Validated_Candidates': total_validated,
+                                    'MCC': mcc,
+                                    'Aggregation_Method': aggregation_method
+                                }
+                                results.append(result)
+                            else:
+                                # Threshold not found
+                                result = {
+                                    'Target_FDR': target_fdr,
+                                    'Threshold': None,
+                                    'Additional_Peptides': 0,
+                                    'Actual_FDR': None,
+                                    'Recovery_Pct': 0,
+                                    'Increase_Pct': 0,
+                                    'False_Positives': 0,
+                                    'Total_Validated_Candidates': peptide_labels.sum() if peptide_labels is not None else 0,
+                                    'MCC': 0
+                                }
+                                results.append(result)
+                        else:
+                            # Fallback for when no ground truth is available
+                            sorted_indices = np.argsort(y_pred)[::-1]
+                            sorted_scores = y_pred[sorted_indices]
+                            
+                            # Conservative threshold estimation
+                            num_predictions = len(y_pred)
+                            target_false_positives = int(num_predictions * target_fdr / 100)
+                            
+                            if target_false_positives < len(sorted_scores):
+                                threshold = sorted_scores[target_false_positives] if target_false_positives > 0 else sorted_scores[0]
+                            else:
+                                threshold = sorted_scores[-1]
+                            
+                            additional_peptides = np.sum(y_pred >= threshold)
+                            
+                            result = {
+                                'Target_FDR': target_fdr,
+                                'Threshold': threshold,
+                                'Additional_Peptides': additional_peptides,
+                                'Actual_FDR': None,  # Unknown without ground truth
+                                'Recovery_Pct': None,
+                                'Increase_Pct': None,
+                                'False_Positives': None,
+                                'Total_Validated_Candidates': None,
+                                'MCC': None,
+                                'Prediction_Score_Range': f"{y_pred.min():.4f} - {y_pred.max():.4f}",
+                                'High_Confidence': np.sum(y_pred >= 0.8),
+                                'Medium_Confidence': np.sum((y_pred >= 0.5) & (y_pred < 0.8)),
+                                'Low_Confidence': np.sum(y_pred < 0.5)
+                            }
+                            results.append(result)
+                        
+                    except Exception as e:
+                        print(f"{Colors.WARNING}⚠️  Could not optimize for {target_fdr}% FDR: {e}{Colors.ENDC}")
+            
+            # Display results
+            self._display_inference_results(results, selected_model, test_config, len(test_data), baseline_count)
+            
+            # Save results
+            self._save_inference_results(results, selected_model, test_config)
+            
+            return True
+            
+        except Exception as e:
+            print(f"{Colors.FAIL}❌ Inference analysis failed: {str(e)}{Colors.ENDC}")
+            import traceback
+            print(f"{Colors.WARNING}Debug info:{Colors.ENDC}")
+            traceback.print_exc()
+            return False
+    
+    def _display_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict, total_samples: int, baseline_count: int = 0):
+        """Display inference results in a formatted table matching Streamlit format."""
+        print(f"\n{Colors.BOLD}🎉 INFERENCE RESULTS{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'='*120}{Colors.ENDC}")
+        
+        # Model summary
+        print(f"{Colors.BOLD}Model Used:{Colors.ENDC} {model_info['id']} ({model_info['type']})")
+        print(f"{Colors.BOLD}Test Method:{Colors.ENDC} {test_config['test_method']}")
+        print(f"{Colors.BOLD}Test Data:{Colors.ENDC} {total_samples:,} samples at {test_config['test_fdr']}% FDR")
+        
+        # Add baseline peptides information if available
+        if baseline_count > 0:
+            print(f"{Colors.BOLD}Baseline Peptides:{Colors.ENDC} {baseline_count:,} peptides at 1% FDR")
+            
+        print()
+        
+        # Check if we have ground truth results
+        has_ground_truth = results and 'Actual_FDR' in results[0] and results[0]['Actual_FDR'] is not None
+        
+        # Results table - match training format exactly
+        if has_ground_truth:
+            # Match training results format exactly
+            print(f"{Colors.BOLD}Target FDR Optimization Results:{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Pos':<10} {'MCC':<10}"
+            print(f"{Colors.BOLD}{header}{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+            
+            for result in results:
+                actual_fdr = f"{result.get('Actual_FDR', 0):.1f}"
+                recovery = f"{result.get('Recovery_Pct', 0):.1f}"
+                increase = f"{result.get('Increase_Pct', 0):.1f}"
+                false_pos = result.get('False_Positives', 0)
+                mcc = f"{result.get('MCC', 0):.3f}"
+                
+                print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} "
+                      f"{actual_fdr:<12} {recovery:<12} {increase:<12} {false_pos:<10,d} {mcc:<10}")
+            
+            print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
+        else:
+            # Simplified table without ground truth (confidence-based)
+            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Confidence Distribution':<35} {'Score Range':<20}"
+            print(f"{Colors.BOLD}{header}{Colors.ENDC}")
+            subheader = f"{'(%)':<12} {'Score':<12} {'Peptides':<12} {'High(>80%) Med(50-80%) Low(<50%)':<35} {'Min - Max':<20}"
+            print(f"{Colors.CYAN}{subheader}{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
+            
+            for result in results:
+                if 'High_Confidence' in result:
+                    confidence_dist = f"{result['High_Confidence']:,}     {result['Medium_Confidence']:,}      {result['Low_Confidence']:,}"
+                    score_range = result.get('Prediction_Score_Range', 'N/A')
+                    print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} "
+                          f"{confidence_dist:<35} {score_range:<20}")
+                else:
+                    # Ground truth results without confidence breakdown
+                    print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d}")
+            
+            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
+        
+        
+        # Update note based on ground truth availability
+        if has_ground_truth:
+            print(f"\n{Colors.GREEN}💡 Note: Results calculated with ground truth validation for accurate statistics{Colors.ENDC}")
+        else:
+            print(f"\n{Colors.BLUE}💡 Note: These are predictions on new data without ground truth validation{Colors.ENDC}")
+    
+    def _save_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict):
+        """Save inference results to file."""
+        try:
+            # Create inference results directory
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            results_dir = Path(f"results/CLI_INFERENCE_{timestamp}")
+            results_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save results summary
+            summary = {
+                'timestamp': datetime.now().isoformat(),
+                'model_used': {
+                    'id': model_info['id'],
+                    'type': model_info['type'],
+                    'model_dir': model_info['model_dir']
+                },
+                'test_configuration': test_config,
+                'results': results,
+                'inference_type': 'CLI_Inference'
+            }
+            
+            # Convert numpy types to Python types for JSON serialization
+            def convert_numpy_types(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_numpy_types(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_numpy_types(v) for v in obj]
+                elif hasattr(obj, 'item'):  # numpy scalars
+                    return obj.item()
+                elif hasattr(obj, 'tolist'):  # numpy arrays
+                    return obj.tolist()
+                else:
+                    return obj
+            
+            summary_serializable = convert_numpy_types(summary)
+            
+            summary_file = results_dir / "inference_summary.json"
+            with open(summary_file, 'w') as f:
+                json.dump(summary_serializable, f, indent=2)
+            
+            print(f"\n{Colors.GREEN}💾 Results saved to: {results_dir}{Colors.ENDC}")
+            print(f"   📄 Summary: {summary_file}")
+            
+        except Exception as e:
+            print(f"{Colors.WARNING}⚠️  Could not save results: {e}{Colors.ENDC}")
     
     def run(self):
         """Main CLI workflow with continuous mode selection."""

@@ -344,7 +344,6 @@ def load_persistent_history():
         if os.path.exists(history_file):
             with open(history_file, 'r') as f:
                 history_data = json.load(f)
-                print(f"✅ Loaded {len(history_data)} runs from persistent history")
                 return history_data
         else:
             print("📁 No persistent history file found - starting fresh")
@@ -362,7 +361,6 @@ def save_persistent_history(run_history):
         
         with open(history_file, 'w') as f:
             json.dump(limited_history, f, indent=2, default=str)
-        print(f"💾 Saved {len(limited_history)} runs to persistent history")
         return True
     except Exception as e:
         print(f"❌ Error saving persistent history: {e}")
@@ -790,7 +788,7 @@ def categorize_features(feature_names):
     
     return df.set_index('feature')['category'].to_dict()
 
-def add_to_run_history(config, results, runtime_minutes):
+def discover_datasets_for_setup(config, results, runtime_minutes):
     """Discover available data files organized by dataset for the setup interface.
     
     Returns:
@@ -994,6 +992,10 @@ def add_to_run_history(config, results, runtime_minutes):
         'full_results': results
     }
     
+    # Initialize run_history if not exists
+    if not hasattr(st.session_state, 'run_history'):
+        st.session_state.run_history = []
+    
     st.session_state.run_history.append(history_entry)
     st.session_state.current_run_id = run_id
     
@@ -1002,7 +1004,8 @@ def add_to_run_history(config, results, runtime_minutes):
         st.session_state.run_history = st.session_state.run_history[-20:]
     
     # Save to persistent storage
-    save_persistent_history(st.session_state.run_history)
+    save_result = save_persistent_history(st.session_state.run_history)
+    print(f"💾 Saved run {run_id} to history (success: {save_result})")
 
 def display_run_history():
     """Display enhanced run history with comparison capabilities."""
@@ -2088,28 +2091,6 @@ def show_training_interface():
                                    value="\n".join(progress_log[-5:]),  # Show last 5 steps
                                    height=150)
         
-        # Prepare XGBoost parameters
-        xgb_params = {
-            'learning_rate': learning_rate,
-            'max_depth': max_depth,
-            'n_estimators': n_estimators,
-            'subsample': subsample,
-            'device': device  # Use detected device
-        }
-        
-        # Run the actual analysis with suppressed verbose output
-        start_time = time.time()
-        
-        @contextlib.contextmanager
-        def suppress_verbose_output():
-            """Suppress verbose stdout output during analysis."""
-            original_stdout = sys.stdout
-            sys.stdout = StringIO()
-            try:
-                yield
-            finally:
-                sys.stdout = original_stdout
-        
         # GPU detection info
         def detect_and_display_gpu():
             try:
@@ -2121,7 +2102,6 @@ def show_training_interface():
                 X_test = np.array([[1, 2], [3, 4]])
                 y_test = np.array([0, 1])
                 test_model.fit(X_test, y_test)
-                st.success("🚀 GPU detected and will be used for faster training")
                 return 'cuda'
             except Exception as e:
                 st.warning(f"⚠️ GPU not available, using CPU: {str(e)[:50]}...")
@@ -2129,6 +2109,38 @@ def show_training_interface():
         
         # Detect compute device
         device = detect_and_display_gpu()
+        
+        # Prepare XGBoost parameters
+        xgb_params = {
+            'learning_rate': learning_rate,
+            'max_depth': max_depth,
+            'n_estimators': n_estimators,
+            'subsample': subsample,
+            'device': device,  # Use detected device
+            'tree_method': 'hist'  # Ensure compatibility with device setting
+        }
+        
+        # Run the actual analysis with suppressed verbose output
+        start_time = time.time()
+        
+        @contextlib.contextmanager
+        def suppress_verbose_output():
+            """Suppress verbose stdout output during analysis."""
+            import warnings
+            import os
+            original_stdout = sys.stdout
+            
+            # Suppress XGBoost device mismatch warnings
+            warnings.filterwarnings('ignore', message='.*Falling back to prediction using DMatrix.*')
+            os.environ['PYTHONWARNINGS'] = 'ignore'
+            
+            sys.stdout = StringIO()
+            try:
+                yield
+            finally:
+                sys.stdout = original_stdout
+                # Restore warning filters
+                warnings.resetwarnings()
         
         try:
             # Run analysis with suppressed verbose terminal output (UI progress unchanged)
@@ -3808,56 +3820,126 @@ def show_inference_interface():
     st.markdown("---")
 
 def load_trained_models_from_history():
-    """Load trained models from run history."""
-    history_file = os.path.join(os.path.dirname(__file__), "history", "run_history.json")
+    """Load trained models from run history and discover CLI models."""
+    models = []
     
-    if not os.path.exists(history_file):
-        return []
-    
-    try:
-        with open(history_file, 'r') as f:
-            history_data = json.load(f)
-        
-        # Format for display
-        models = []
-        for run in history_data:
-            # Handle potential None values and string/int conversion
-            best_fdr = run['summary'].get('best_fdr', 0)
-            best_peptides = run['summary'].get('best_peptides', 0)
+    # First, load from Streamlit history file
+    history_file = get_history_file_path()
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, 'r') as f:
+                history_data = json.load(f)
             
-            # Ensure best_fdr is a number
-            if best_fdr is None:
-                best_fdr = 0
-            
-            # Ensure best_peptides is properly formatted
-            if best_peptides is None:
-                best_peptides = 0
-            elif isinstance(best_peptides, str):
-                try:
-                    best_peptides = int(best_peptides)
-                except ValueError:
+            # Format Streamlit models for display
+            for run in history_data:
+                # Handle potential None values and string/int conversion
+                best_fdr = run['summary'].get('best_fdr', 0)
+                best_peptides = run['summary'].get('best_peptides', 0)
+                
+                # Ensure best_fdr is a number
+                if best_fdr is None:
+                    best_fdr = 0
+                
+                # Ensure best_peptides is properly formatted
+                if best_peptides is None:
                     best_peptides = 0
-            
-            model_info = {
-                'run_id': run['run_id'],
-                'timestamp': run['timestamp'],
-                'config': run['config'],
-                'runtime': run['summary'].get('runtime_minutes', 0),
-                'best_fdr': best_fdr,
-                'best_peptides': best_peptides,
-                'results_dir': run['summary'].get('results_dir', ''),
-                'total_results': run['summary'].get('total_results', 0),
-                'summary': f"FDR: {best_fdr:.1f}% | Peptides: {best_peptides:,}"
-            }
-            models.append(model_info)
-        
-        # Sort by timestamp (newest first)
-        models.sort(key=lambda x: x['timestamp'], reverse=True)
-        return models
-        
+                elif isinstance(best_peptides, str):
+                    try:
+                        best_peptides = int(best_peptides)
+                    except ValueError:
+                        best_peptides = 0
+                
+                model_info = {
+                    'run_id': run['run_id'],
+                    'timestamp': run['timestamp'],
+                    'config': run['config'],
+                    'runtime': run['summary'].get('runtime_minutes', 0),
+                    'best_fdr': best_fdr,
+                    'best_peptides': best_peptides,
+                    'results_dir': run['summary'].get('results_dir', ''),
+                    'total_results': run['summary'].get('total_results', 0),
+                    'summary': f"FDR: {best_fdr:.1f}% | Peptides: {best_peptides:,}",
+                    'source': 'Streamlit'
+                }
+                models.append(model_info)
+                
+        except Exception as e:
+            st.warning(f"Could not load Streamlit training history: {str(e)}")
+    
+    # Second, discover CLI models from results directories
+    try:
+        results_dir = os.path.join(os.path.dirname(__file__), "results")
+        if os.path.exists(results_dir):
+            for dir_name in os.listdir(results_dir):
+                if dir_name.startswith("CLI_RESULTS_"):
+                    cli_model_dir = os.path.join(results_dir, dir_name, "saved_models")
+                    cli_config_file = os.path.join(results_dir, dir_name, "analysis_config.json")
+                    
+                    if os.path.exists(cli_model_dir):
+                        metadata_file = os.path.join(cli_model_dir, "model_metadata.json")
+                        if os.path.exists(metadata_file):
+                            with open(metadata_file, 'r') as f:
+                                metadata = json.load(f)
+                            
+                            # Load CLI configuration for actual method names
+                            cli_config = {}
+                            if os.path.exists(cli_config_file):
+                                try:
+                                    with open(cli_config_file, 'r') as f:
+                                        cli_config = json.load(f)
+                                except Exception:
+                                    pass  # Use defaults if config can't be loaded
+                            
+                            # Extract run info from directory name (CLI_RESULTS_YYYYMMDD_HHMMSS)
+                            timestamp_str = dir_name.replace("CLI_RESULTS_", "")
+                            try:
+                                timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                                timestamp_iso = timestamp.isoformat()
+                            except ValueError:
+                                timestamp_iso = metadata.get('save_timestamp', '')
+                            
+                            # Find best result for summary
+                            best_result = None
+                            if 'training_results' in metadata:
+                                valid_results = [r for r in metadata['training_results'] if r['Actual_FDR'] <= 5.0]
+                                if not valid_results:
+                                    valid_results = metadata['training_results']
+                                if valid_results:
+                                    best_result = max(valid_results, key=lambda x: x['Additional_Peptides'])
+                            
+                            # Get actual method names from CLI config or use defaults
+                            train_methods = cli_config.get('train_methods', ['CLI_Training'])
+                            test_method = cli_config.get('test_method', 'CLI_Testing')
+                            dataset = cli_config.get('dataset', 'Unknown')
+                            
+                            model_info = {
+                                'run_id': dir_name,
+                                'timestamp': timestamp_iso,
+                                'config': {
+                                    'train_methods': train_methods,
+                                    'test_method': test_method,
+                                    'dataset': dataset,
+                                    'train_fdr_levels': cli_config.get('train_fdr_levels', [50]),
+                                    'test_fdr': cli_config.get('test_fdr', 50),
+                                    'target_fdr_levels': cli_config.get('target_fdr_levels', []),
+                                    'source': 'CLI'
+                                },
+                                'runtime': 0,
+                                'best_fdr': best_result['Actual_FDR'] if best_result else 0,
+                                'best_peptides': best_result['Additional_Peptides'] if best_result else 0,
+                                'results_dir': os.path.join(results_dir, dir_name),
+                                'total_results': len(metadata.get('training_results', [])),
+                                'summary': f"FDR: {best_result['Actual_FDR']:.1f}% | Peptides: {best_result['Additional_Peptides']:,}" if best_result else "CLI Model",
+                                'source': 'CLI'
+                            }
+                            models.append(model_info)
+                            
     except Exception as e:
-        st.warning(f"Could not load training history: {str(e)}")
-        return []
+        st.warning(f"Could not load CLI models: {str(e)}")
+    
+    # Sort all models by timestamp (newest first)
+    models.sort(key=lambda x: x['timestamp'], reverse=True)
+    return models
 
 def get_available_methods_by_dataset(files_info_by_dataset):
     """Get available methods from files info, same as training mode."""
@@ -3883,6 +3965,9 @@ def get_available_methods_by_dataset(files_info_by_dataset):
 
 def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_levels):
     """Run inference analysis using the saved trained model."""
+    # Store test method in session state for results display
+    st.session_state.inference_test_method = test_method
+    
     # Create progress container
     progress_container = st.container()
     
@@ -3965,11 +4050,6 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             progress_bar.progress(50)
             
             # Create features for test data using the same feature engineering
-            # Debug: Check data types before calling _make_advanced_features
-            print(f"🔍 Debug - test_data type: {type(test_data)}")
-            print(f"🔍 Debug - test_data shape: {test_data.shape if hasattr(test_data, 'shape') else 'No shape'}")
-            print(f"🔍 Debug - training_features type: {type(training_features)}")
-            print(f"🔍 Debug - training_features length: {len(training_features)}")
             
             X_test = api._make_advanced_features(test_data, training_features)
             

@@ -287,7 +287,6 @@ class PeptideValidatorAPI:
         
         dataset_name = "ASTRAL 7min" if 'ASTRAL' in test_method else "fast gradient"
         
-        print(f"Loading {dataset_name} baseline peptides for {test_method} (all triplicates): found {len(baseline_files)} files")
         baseline_peptides = set()
         
         for file_path in baseline_files:
@@ -295,12 +294,10 @@ class PeptideValidatorAPI:
                 df = pd.read_parquet(file_path)
                 file_peptides = set(df['Modified.Sequence'].unique())
                 baseline_peptides.update(file_peptides)
-                print(f"   Loaded {len(file_peptides):,} peptides from {Path(file_path).name}")
             except Exception as e:
                 print(f"   Error loading {file_path}: {e}")
                 continue
         
-        print(f"Total unique baseline peptides for {test_method}: {len(baseline_peptides):,}")
         return baseline_peptides
     
     def _load_ground_truth_peptides(self, test_method: str = None) -> set:
@@ -314,23 +311,18 @@ class PeptideValidatorAPI:
         dataset_name = self._get_dataset_name(test_method)
         ground_truth_peptides = set()
         
-        print(f"Found {len(ground_truth_files)} ground truth files for {test_method}")
         
         for file_path in ground_truth_files:
             try:
                 filename = Path(file_path).name
-                # Just print the filename instead of using progress callback
-                print(f"   Loading ground truth: {filename}")
                 
                 df = pd.read_parquet(file_path)
                 file_peptides = set(df['Modified.Sequence'].unique())
                 ground_truth_peptides.update(file_peptides)
-                print(f"   Loaded {len(file_peptides)} peptides from {filename}")
             except Exception as e:
                 print(f"   Error loading {file_path}: {e}")
                 continue  # Skip problematic files
         
-        print(f"Total ground truth peptides: {len(ground_truth_peptides)}")
         return ground_truth_peptides
     
     def _get_matching_ground_truth_files(self, test_method: str, files_info_by_dataset: dict) -> list:
@@ -385,16 +377,12 @@ class PeptideValidatorAPI:
                     target_gt_filenames = [target_gt_filenames]
                 
                 # Find the exact ground truth files
-                print(f"DEBUG: Looking for ground truth methods: {target_gt_filenames}")
                 available_methods = [gt_file['method'] for gt_file in dataset_gt_files]
-                print(f"DEBUG: Available ground truth methods: {available_methods}")
-                print(f"DEBUG: First few filenames: {[gt_file['filename'] for gt_file in dataset_gt_files[:3]]}")
                 
                 for target_gt_filename in target_gt_filenames:
                     for gt_file in dataset_gt_files:
                         if target_gt_filename == gt_file['method']:
                             matched_files.append(gt_file['path'])
-                            print(f"Direct mapping: {test_method} -> {Path(gt_file['path']).name}")
                             break
                 
                 if not matched_files:
@@ -520,7 +508,6 @@ class PeptideValidatorAPI:
                 # Use the new configured method function to handle both individual files and groups
                 method_files = get_files_for_configured_method(method, fdr)
                 
-                print(f"  Method {method} at FDR_{fdr}: found {len(method_files)} files")
                 
                 for file_path in method_files:
                     try:
@@ -905,7 +892,9 @@ class PeptideValidatorAPI:
             
             # Create a much denser grid between these top scores and lower scores
             if len(unique_scores) > 20:
-                min_grid = unique_scores[-100]  # Go deeper into the score range
+                # Use the available range, but don't go beyond array bounds
+                min_index = min(100, len(unique_scores))  # Use available scores or 100, whichever is smaller
+                min_grid = unique_scores[-min_index]  # Go deeper into the score range
                 max_grid = np.max(y_scores_sorted)
                 # Create a very dense grid with 5000 points
                 threshold_grid = np.linspace(min_grid, max_grid, 5000)
@@ -973,15 +962,10 @@ class PeptideValidatorAPI:
         Returns:
             Tuple of (peptide_data, peptide_predictions, peptide_labels)
         """
-        print(f"🔄 AGGREGATING PREDICTIONS BY PEPTIDE ({aggregation_method})")
-        
         # Create a dataframe with all the necessary information
         agg_df = test_data.copy()
         agg_df['prediction_prob'] = predictions
         agg_df['label'] = labels
-        
-        # Print pre-aggregation stats
-        print(f"  Before aggregation: {len(agg_df):,} rows, {agg_df['Modified.Sequence'].nunique():,} unique peptides")
         
         # Aggregate by peptide sequence
         if aggregation_method == 'mean':
@@ -1024,10 +1008,6 @@ class PeptideValidatorAPI:
         peptide_predictions = peptide_agg['prediction_prob'].values
         peptide_labels = peptide_agg['label'].values
         
-        print(f"  After aggregation: {len(peptide_data):,} unique peptides")
-        print(f"  Aggregation method: {aggregation_method}")
-        print(f"  Prediction range: {peptide_predictions.min():.4f} to {peptide_predictions.max():.4f}")
-        print(f"  True positive peptides: {peptide_labels.sum():,}")
         
         return peptide_data, peptide_predictions, pd.Series(peptide_labels)
 

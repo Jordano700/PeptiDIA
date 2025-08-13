@@ -25,7 +25,6 @@ echo "📱 Access the interface at: http://localhost:8501"
 echo ""
 echo "💡 Tips:"
 echo "  - Use Ctrl+C to stop the server"
-echo "  - The interface will auto-refresh when you make changes"
 echo "  - Check the terminal for any error messages"
 echo ""
 
