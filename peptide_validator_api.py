@@ -850,7 +850,7 @@ class PeptideValidatorAPI:
         else:
             return obj
     
-    def _find_optimal_threshold(self, y_true: pd.Series, y_scores: np.ndarray, target_fdr: float) -> Tuple[float, int, float]:
+    def _find_optimal_threshold(self, y_true: pd.Series, y_scores: np.ndarray, target_fdr: float, verbose: bool = True) -> Tuple[float, int, float]:
         """Find the optimal threshold that achieves exactly the target FDR."""
         y_true_arr = np.array(y_true.values if hasattr(y_true, 'values') else y_true)
         y_scores_arr = np.array(y_scores)
@@ -860,22 +860,27 @@ class PeptideValidatorAPI:
         y_true_sorted = y_true_arr[sorted_indices]
         y_scores_sorted = y_scores_arr[sorted_indices]
         
-        print(f"\n🎯 THRESHOLD OPTIMIZATION (Target FDR: {target_fdr}%)")
-        print(f"  Input: {len(y_true_arr):,} UNIQUE peptides")
-        print(f"  True positives: {np.sum(y_true_arr):,}")
-        print(f"  Score range: {np.min(y_scores_arr):.6f} to {np.max(y_scores_arr):.6f}")
-        print(f"  Score distribution:")
-        print(f"  >0.99: {np.sum(y_scores_arr > 0.99)}")
-        print(f"  >0.95: {np.sum(y_scores_arr > 0.95)}")  
-        print(f"  >0.90: {np.sum(y_scores_arr > 0.90)}")
-        print(f"  >0.80: {np.sum(y_scores_arr > 0.80)}")
-        print(f"  >0.50: {np.sum(y_scores_arr > 0.50)}")
-        
-        # Check if model is actually discriminating
-        tp_scores = y_scores_arr[y_true_arr == 1]
-        fp_scores = y_scores_arr[y_true_arr == 0]
-        print(f"True positive score stats: mean={np.mean(tp_scores):.4f}, std={np.std(tp_scores):.4f}")
-        print(f"False positive score stats: mean={np.mean(fp_scores):.4f}, std={np.std(fp_scores):.4f}")
+        if verbose:
+            print(f"\n🎯 THRESHOLD OPTIMIZATION (Target FDR: {target_fdr}%)")
+            print(f"  Input: {len(y_true_arr):,} UNIQUE peptides")
+            print(f"  True positives: {np.sum(y_true_arr):,}")
+            print(f"  Score range: {np.min(y_scores_arr):.6f} to {np.max(y_scores_arr):.6f}")
+            print(f"  Score distribution:")
+            print(f"  >0.99: {np.sum(y_scores_arr > 0.99)}")
+            print(f"  >0.95: {np.sum(y_scores_arr > 0.95)}")  
+            print(f"  >0.90: {np.sum(y_scores_arr > 0.90)}")
+            print(f"  >0.80: {np.sum(y_scores_arr > 0.80)}")
+            print(f"  >0.50: {np.sum(y_scores_arr > 0.50)}")
+            
+            # Check if model is actually discriminating
+            tp_scores = y_scores_arr[y_true_arr == 1]
+            fp_scores = y_scores_arr[y_true_arr == 0]
+            print(f"True positive score stats: mean={np.mean(tp_scores):.4f}, std={np.std(tp_scores):.4f}")
+            print(f"False positive score stats: mean={np.mean(fp_scores):.4f}, std={np.std(fp_scores):.4f}")
+        else:
+            # Still calculate stats but don't print
+            tp_scores = y_scores_arr[y_true_arr == 1]
+            fp_scores = y_scores_arr[y_true_arr == 0]
         
         best_threshold = None
         best_peptides = 0
@@ -926,7 +931,7 @@ class PeptideValidatorAPI:
             
             if actual_fdr <= target_fdr + tolerance:
                 valid_thresholds_found += 1
-                if valid_thresholds_found <= 3:  # Debug first few valid thresholds
+                if verbose and valid_thresholds_found <= 3:  # Debug first few valid thresholds
                     print(f"  Valid threshold {valid_thresholds_found}: {threshold:.6f} -> TP:{tp}, FP:{fp}, FDR:{actual_fdr:.1f}%")
                 
                 # Prefer thresholds that are closer to target FDR (but not over)
@@ -942,9 +947,10 @@ class PeptideValidatorAPI:
                     best_peptides = tp
                     best_actual_fdr = actual_fdr
         
-        threshold_str = f"{best_threshold:.6f}" if best_threshold is not None else "None"
-        print(f"  ✅ Final: threshold={threshold_str}, peptides={best_peptides:,}, FDR={best_actual_fdr:.1f}%")
-        print(f"  Valid thresholds found: {valid_thresholds_found}")
+        if verbose:
+            threshold_str = f"{best_threshold:.6f}" if best_threshold is not None else "None"
+            print(f"  ✅ Final: threshold={threshold_str}, peptides={best_peptides:,}, FDR={best_actual_fdr:.1f}%")
+            print(f"  Valid thresholds found: {valid_thresholds_found}")
         
         return best_threshold, best_peptides, best_actual_fdr
     
@@ -967,15 +973,18 @@ class PeptideValidatorAPI:
         agg_df['prediction_prob'] = predictions
         agg_df['label'] = labels
         
+        # Determine which sequence column to use
+        seq_column = 'Modified.Sequence' if 'Modified.Sequence' in agg_df.columns else 'Stripped.Sequence'
+        
         # Aggregate by peptide sequence
         if aggregation_method == 'mean':
-            peptide_agg = agg_df.groupby('Modified.Sequence').agg({
+            peptide_agg = agg_df.groupby(seq_column).agg({
                 'prediction_prob': 'mean',
                 'label': 'first',  # Should be same for all rows of same peptide
                 'source_fdr': 'first'
             }).reset_index()
         elif aggregation_method == 'max':
-            peptide_agg = agg_df.groupby('Modified.Sequence').agg({
+            peptide_agg = agg_df.groupby(seq_column).agg({
                 'prediction_prob': 'max',
                 'label': 'first',
                 'source_fdr': 'first'
@@ -983,12 +992,12 @@ class PeptideValidatorAPI:
         elif aggregation_method == 'weighted':
             # Weight by intensity if available
             if 'Peak.Height' in agg_df.columns:
-                weights = agg_df.groupby('Modified.Sequence')['Peak.Height'].apply(
+                weights = agg_df.groupby(seq_column)['Peak.Height'].apply(
                     lambda x: x / x.sum() if x.sum() > 0 else pd.Series([1/len(x)] * len(x), index=x.index)
                 )
                 agg_df['weight'] = weights
                 
-                peptide_agg = agg_df.groupby('Modified.Sequence').apply(
+                peptide_agg = agg_df.groupby(seq_column).apply(
                     lambda group: pd.Series({
                         'prediction_prob': (group['prediction_prob'] * group['weight']).sum(),
                         'label': group['label'].iloc[0],
@@ -997,14 +1006,14 @@ class PeptideValidatorAPI:
                 ).reset_index()
             else:
                 # Fallback to mean if no intensity
-                peptide_agg = agg_df.groupby('Modified.Sequence').agg({
+                peptide_agg = agg_df.groupby(seq_column).agg({
                     'prediction_prob': 'mean',
                     'label': 'first',
                     'source_fdr': 'first'
                 }).reset_index()
         
         # Extract aggregated values
-        peptide_data = peptide_agg[['Modified.Sequence', 'source_fdr']]
+        peptide_data = peptide_agg[[seq_column, 'source_fdr']]
         peptide_predictions = peptide_agg['prediction_prob'].values
         peptide_labels = peptide_agg['label'].values
         

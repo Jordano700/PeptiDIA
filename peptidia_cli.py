@@ -1436,7 +1436,7 @@ class PeptiDIACLI:
         if training_results:
             print(f"\n{Colors.BOLD}Training Results:{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Pos':<10} {'MCC':<10}"
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
             
@@ -1663,6 +1663,24 @@ class PeptiDIACLI:
                     baseline_count = len(ground_truth)
                     print(f"{Colors.WARNING}⚠️  Using ground truth size as baseline: {baseline_count:,}{Colors.ENDC}")
             
+            # Calculate additional candidates pool for summary
+            additional_candidates_pool = 0
+            pool_validation_rate = 0.0
+            validated_additional_count = 0
+            if baseline_peptides is not None:
+                # Get unique test peptides
+                test_peptides = set(test_data['Stripped.Sequence'].unique())
+                additional_candidates = test_peptides - baseline_peptides
+                additional_candidates_pool = len(additional_candidates)
+                
+                # Calculate validation rate if we have ground truth
+                if ground_truth is not None:
+                    validated_additional = additional_candidates & ground_truth
+                    validated_additional_count = len(validated_additional)
+                    pool_validation_rate = (validated_additional_count / additional_candidates_pool * 100) if additional_candidates_pool > 0 else 0
+                    print(f"{Colors.GREEN}✅ Additional candidates pool: {additional_candidates_pool:,} peptides{Colors.ENDC}")
+                    print(f"{Colors.GREEN}✅ Pool validation: {validated_additional_count:,}/{additional_candidates_pool:,} ({pool_validation_rate:.1f}%) are validated{Colors.ENDC}")
+            
             # Create features for test data
             print(f"{Colors.BLUE}🔧 Creating features for inference...{Colors.ENDC}")
             X_test = api._make_advanced_features(test_data, training_features)
@@ -1693,111 +1711,119 @@ class PeptiDIACLI:
             
             # Calculate results with proper statistics
             results = []
-            with self._suppress_verbose_output():
-                for target_fdr in test_config['target_fdr_levels']:
-                    try:
-                        if ground_truth is not None:
-                            # Use ground truth for proper statistics calculation (like Streamlit)
-                            # Create peptide-level aggregation like in the main API
-                            aggregation_method = 'max'  # Default
-                            if 'config' in selected_model and 'aggregation_method' in selected_model['config']:
-                                aggregation_method = selected_model['config']['aggregation_method']
+            for target_fdr in test_config['target_fdr_levels']:
+                try:
+                    if ground_truth is not None:
+                        # Use ground truth for proper statistics calculation (like Streamlit)
+                        # Create peptide-level aggregation like in the main API
+                        aggregation_method = 'max'  # Default
+                        if 'config' in selected_model and 'aggregation_method' in selected_model['config']:
+                            aggregation_method = selected_model['config']['aggregation_method']
+                        
+                        # Create peptide predictions using the same process as training
+                        # Create labels for test data based on ground truth
+                        test_peptides = test_data['Stripped.Sequence'].values
+                        peptide_labels = pd.Series([peptide in ground_truth for peptide in test_peptides])
+                        
+                        # Aggregate predictions by peptide
+                        peptide_df, peptide_predictions, peptide_labels = api._aggregate_predictions_by_peptide(
+                            test_data, y_pred, peptide_labels, aggregation_method
+                        )
+                        
+                        # Filter to only additional candidates (not baseline) for Streamlit-like behavior
+                        if baseline_peptides is not None:
+                            # Determine which sequence column exists in the aggregated data
+                            seq_column = 'Modified.Sequence' if 'Modified.Sequence' in peptide_df.columns else 'Stripped.Sequence'
+                            additional_candidates_mask = ~peptide_df[seq_column].isin(baseline_peptides)
+                            peptide_df = peptide_df[additional_candidates_mask].reset_index(drop=True)
+                            peptide_predictions = peptide_predictions[additional_candidates_mask]
+                            peptide_labels = peptide_labels[additional_candidates_mask].reset_index(drop=True)
+                        
+                        # Use the same threshold optimization as training
+                        threshold, additional_peptides, actual_fdr = api._find_optimal_threshold(
+                            peptide_labels, peptide_predictions, target_fdr, verbose=False
+                        )
+                        
+                        if threshold is not None:
+                            # Calculate metrics like in training
+                            total_validated = peptide_labels.sum()
+                            recovery_pct = additional_peptides / total_validated * 100 if total_validated > 0 else 0
+                            increase_pct = additional_peptides / baseline_count * 100 if baseline_count > 0 else 0
                             
-                            # Create peptide predictions using the same process as training
-                            # Create labels for test data based on ground truth
-                            test_peptides = test_data['Stripped.Sequence'].values
-                            peptide_labels = pd.Series([peptide in ground_truth for peptide in test_peptides])
+                            # Calculate MCC
+                            predictions = peptide_predictions >= threshold
+                            tp = (peptide_labels & predictions).sum()
+                            fp = (~peptide_labels & predictions).sum()
                             
-                            # Aggregate predictions by peptide
-                            peptide_df, peptide_predictions, peptide_labels = api._aggregate_predictions_by_peptide(
-                                test_data, y_pred, peptide_labels, aggregation_method
-                            )
-                            
-                            # Use the same threshold optimization as training
-                            threshold, additional_peptides, actual_fdr = api._find_optimal_threshold(
-                                peptide_labels, peptide_predictions, target_fdr
-                            )
-                            
-                            if threshold is not None:
-                                # Calculate metrics like in training
-                                total_validated = peptide_labels.sum()
-                                recovery_pct = additional_peptides / total_validated * 100 if total_validated > 0 else 0
-                                increase_pct = additional_peptides / baseline_count * 100 if baseline_count > 0 else 0
-                                
-                                # Calculate MCC
-                                predictions = peptide_predictions >= threshold
-                                tp = (peptide_labels & predictions).sum()
-                                fp = (~peptide_labels & predictions).sum()
-                                
-                                # MCC calculation
-                                from sklearn.metrics import matthews_corrcoef
-                                mcc = matthews_corrcoef(peptide_labels, predictions)
-                                
-                                result = {
-                                    'Target_FDR': target_fdr,
-                                    'Threshold': threshold,
-                                    'Additional_Peptides': additional_peptides,
-                                    'Actual_FDR': actual_fdr,
-                                    'Recovery_Pct': recovery_pct,
-                                    'Increase_Pct': increase_pct,
-                                    'False_Positives': fp,
-                                    'Total_Validated_Candidates': total_validated,
-                                    'MCC': mcc,
-                                    'Aggregation_Method': aggregation_method
-                                }
-                                results.append(result)
-                            else:
-                                # Threshold not found
-                                result = {
-                                    'Target_FDR': target_fdr,
-                                    'Threshold': None,
-                                    'Additional_Peptides': 0,
-                                    'Actual_FDR': None,
-                                    'Recovery_Pct': 0,
-                                    'Increase_Pct': 0,
-                                    'False_Positives': 0,
-                                    'Total_Validated_Candidates': peptide_labels.sum() if peptide_labels is not None else 0,
-                                    'MCC': 0
-                                }
-                                results.append(result)
-                        else:
-                            # Fallback for when no ground truth is available
-                            sorted_indices = np.argsort(y_pred)[::-1]
-                            sorted_scores = y_pred[sorted_indices]
-                            
-                            # Conservative threshold estimation
-                            num_predictions = len(y_pred)
-                            target_false_positives = int(num_predictions * target_fdr / 100)
-                            
-                            if target_false_positives < len(sorted_scores):
-                                threshold = sorted_scores[target_false_positives] if target_false_positives > 0 else sorted_scores[0]
-                            else:
-                                threshold = sorted_scores[-1]
-                            
-                            additional_peptides = np.sum(y_pred >= threshold)
+                            # MCC calculation
+                            from sklearn.metrics import matthews_corrcoef
+                            mcc = matthews_corrcoef(peptide_labels, predictions)
                             
                             result = {
                                 'Target_FDR': target_fdr,
                                 'Threshold': threshold,
                                 'Additional_Peptides': additional_peptides,
-                                'Actual_FDR': None,  # Unknown without ground truth
-                                'Recovery_Pct': None,
-                                'Increase_Pct': None,
-                                'False_Positives': None,
-                                'Total_Validated_Candidates': None,
-                                'MCC': None,
-                                'Prediction_Score_Range': f"{y_pred.min():.4f} - {y_pred.max():.4f}",
-                                'High_Confidence': np.sum(y_pred >= 0.8),
-                                'Medium_Confidence': np.sum((y_pred >= 0.5) & (y_pred < 0.8)),
-                                'Low_Confidence': np.sum(y_pred < 0.5)
+                                'Actual_FDR': actual_fdr,
+                                'Recovery_Pct': recovery_pct,
+                                'Increase_Pct': increase_pct,
+                                'False_Positives': fp,
+                                'Total_Validated_Candidates': total_validated,
+                                'MCC': mcc,
+                                'Aggregation_Method': aggregation_method
                             }
                             results.append(result)
+                        else:
+                            # Threshold not found
+                            result = {
+                                'Target_FDR': target_fdr,
+                                'Threshold': None,
+                                'Additional_Peptides': 0,
+                                'Actual_FDR': None,
+                                'Recovery_Pct': 0,
+                                'Increase_Pct': 0,
+                                'False_Positives': 0,
+                                'Total_Validated_Candidates': peptide_labels.sum() if peptide_labels is not None else 0,
+                                'MCC': 0
+                            }
+                            results.append(result)
+                    else:
+                        # Fallback for when no ground truth is available
+                        sorted_indices = np.argsort(y_pred)[::-1]
+                        sorted_scores = y_pred[sorted_indices]
                         
-                    except Exception as e:
-                        print(f"{Colors.WARNING}⚠️  Could not optimize for {target_fdr}% FDR: {e}{Colors.ENDC}")
+                        # Conservative threshold estimation
+                        num_predictions = len(y_pred)
+                        target_false_positives = int(num_predictions * target_fdr / 100)
+                        
+                        if target_false_positives < len(sorted_scores):
+                            threshold = sorted_scores[target_false_positives] if target_false_positives > 0 else sorted_scores[0]
+                        else:
+                            threshold = sorted_scores[-1]
+                        
+                        additional_peptides = np.sum(y_pred >= threshold)
+                        
+                        result = {
+                            'Target_FDR': target_fdr,
+                            'Threshold': threshold,
+                            'Additional_Peptides': additional_peptides,
+                            'Actual_FDR': None,  # Unknown without ground truth
+                            'Recovery_Pct': None,
+                            'Increase_Pct': None,
+                            'False_Positives': None,
+                            'Total_Validated_Candidates': None,
+                            'MCC': None,
+                            'Prediction_Score_Range': f"{y_pred.min():.4f} - {y_pred.max():.4f}",
+                            'High_Confidence': np.sum(y_pred >= 0.8),
+                            'Medium_Confidence': np.sum((y_pred >= 0.5) & (y_pred < 0.8)),
+                            'Low_Confidence': np.sum(y_pred < 0.5)
+                        }
+                        results.append(result)
+                        
+                except Exception as e:
+                    print(f"{Colors.WARNING}⚠️  Could not optimize for {target_fdr}% FDR: {e}{Colors.ENDC}")
             
             # Display results
-            self._display_inference_results(results, selected_model, test_config, len(test_data), baseline_count)
+            self._display_inference_results(results, selected_model, test_config, len(test_data), baseline_count, additional_candidates_pool, validated_additional_count, pool_validation_rate)
             
             # Save results
             self._save_inference_results(results, selected_model, test_config)
@@ -1811,7 +1837,7 @@ class PeptiDIACLI:
             traceback.print_exc()
             return False
     
-    def _display_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict, total_samples: int, baseline_count: int = 0):
+    def _display_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict, total_samples: int, baseline_count: int = 0, additional_candidates_pool: int = 0, validated_additional_count: int = 0, pool_validation_rate: float = 0.0):
         """Display inference results in a formatted table matching Streamlit format."""
         print(f"\n{Colors.BOLD}🎉 INFERENCE RESULTS{Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*120}{Colors.ENDC}")
@@ -1824,6 +1850,12 @@ class PeptiDIACLI:
         # Add baseline peptides information if available
         if baseline_count > 0:
             print(f"{Colors.BOLD}Baseline Peptides:{Colors.ENDC} {baseline_count:,} peptides at 1% FDR")
+        
+        # Add additional candidates pool information
+        if additional_candidates_pool > 0:
+            print(f"{Colors.BOLD}Additional Candidates Pool:{Colors.ENDC} {additional_candidates_pool:,} peptides available for validation")
+            if validated_additional_count > 0:
+                print(f"{Colors.BOLD}Pool Validation Rate:{Colors.ENDC} {validated_additional_count:,}/{additional_candidates_pool:,} ({pool_validation_rate:.1f}%) of additional candidates are validated")
             
         print()
         
@@ -1835,7 +1867,7 @@ class PeptiDIACLI:
             # Match training results format exactly
             print(f"{Colors.BOLD}Target FDR Optimization Results:{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Pos':<10} {'MCC':<10}"
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
             
