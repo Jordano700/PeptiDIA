@@ -1707,8 +1707,8 @@ def show_training_interface():
     st.sidebar.markdown("### 🎯 Target FDR Levels")
     target_fdrs = st.sidebar.multiselect(
         "Target FDR Levels (%)",
-        options=[1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0],
-        default=[1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0],
+        options=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0],
+        default=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0],
         help="FDR levels to optimize for in results (select more for broader analysis)"
     )
     
@@ -3144,7 +3144,9 @@ def display_overview_plots(df):
             plot_bgcolor='white',
             paper_bgcolor='white',
             font=dict(family="Inter", size=12),
-            title_font_size=16,
+            title_font_size=14,
+            height=400,  # Better height for 2-column layout with sidebar
+            margin=dict(l=50, r=20, t=60, b=50),
             xaxis=dict(gridcolor='lightgray'),
             yaxis=dict(gridcolor='lightgray')
         )
@@ -3175,7 +3177,9 @@ def display_overview_plots(df):
             plot_bgcolor='white',
             paper_bgcolor='white',
             font=dict(family="Inter", size=12),
-            title_font_size=16,
+            title_font_size=14,
+            height=400,  # Better height for 2-column layout with sidebar
+            margin=dict(l=50, r=20, t=60, b=50),
             xaxis=dict(gridcolor='lightgray'),
             yaxis=dict(gridcolor='lightgray')
         )
@@ -3187,6 +3191,7 @@ def display_detailed_plots(df):
     # Bar chart of additional peptides by target FDR
     fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
                 title='Additional Peptides by Target FDR',
+                orientation='v',  # Explicitly set vertical orientation
                 color_discrete_sequence=[CHART_COLORS['bar_primary']])
     
     fig.update_layout(
@@ -3194,8 +3199,16 @@ def display_detailed_plots(df):
         paper_bgcolor='white',
         font=dict(family="Inter", size=12),
         title_font_size=16,
-        xaxis=dict(gridcolor='lightgray'),
-        yaxis=dict(gridcolor='lightgray')
+        height=500,  # Fixed height for better appearance with sidebar
+        margin=dict(l=60, r=30, t=80, b=60),  # Better margins for sidebar layout
+        xaxis=dict(
+            gridcolor='lightgray',
+            title='Target FDR (%)'
+        ),
+        yaxis=dict(
+            gridcolor='lightgray',
+            title='Additional Peptides'
+        )
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -3212,6 +3225,8 @@ def display_detailed_plots(df):
         paper_bgcolor='white',
         font=dict(family="Inter", size=12),
         title_font_size=16,
+        height=500,  # Fixed height for better appearance with sidebar
+        margin=dict(l=60, r=30, t=120, b=60),  # Extra top margin for annotation
         xaxis=dict(gridcolor='lightgray', title='Target FDR (%)'),
         yaxis=dict(gridcolor='lightgray', title='Recovery Percentage (%)'),
         annotations=[
@@ -3241,16 +3256,17 @@ def display_data_tables(df):
     • **Recovery %**: Percentage of validated candidates successfully recovered
     • **Increase %**: Improvement over baseline peptide count
     • **False Positives**: Model predictions not validated by ground truth
-    • **Total Validated Candidates**: Total peptides in test set that are present in ground truth
     • **MCC**: Matthews Correlation Coefficient (model performance metric, -1 to +1)
     """)
     
     # Format the dataframe for display
     display_df = df.copy()
     
-    # Remove Aggregation_Method column from display (internal use only)
-    if 'Aggregation_Method' in display_df.columns:
-        display_df = display_df.drop('Aggregation_Method', axis=1)
+    # Remove internal columns from display 
+    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates']
+    for col in columns_to_remove:
+        if col in display_df.columns:
+            display_df = display_df.drop(col, axis=1)
     
     display_df['Target_FDR'] = display_df['Target_FDR'].map('{:.1f}%'.format)
     display_df['Actual_FDR'] = display_df['Actual_FDR'].map('{:.1f}%'.format)
@@ -3269,7 +3285,6 @@ def display_data_tables(df):
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
             "Additional_Peptides": st.column_config.NumberColumn("Additional Unique Peptides", help="Total additional peptides identified (includes both true and false positives)"),
             "False_Positives": st.column_config.NumberColumn("False Positives", help="Model predictions not in ground truth"),
-            "Total_Validated_Candidates": st.column_config.NumberColumn("Total Validated Candidates", help="Total recoverable peptides in test set"),
             "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
             "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient (-1 to +1, higher is better)"),
             "Recovery_Pct": st.column_config.TextColumn("Recovery %", help="% of validated candidates recovered"),
@@ -3723,7 +3738,7 @@ def show_inference_interface():
             st.info(f"✅ This model has learned thresholds for {len(available_fdr_levels)} FDR levels")
         else:
             # If no target_fdr_levels in config, show warning and use standard levels
-            available_fdr_levels = [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 15.0, 20.0, 30.0, 50.0]
+            available_fdr_levels = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0]
             st.warning("⚠️ Model config missing target_fdr_levels. Using standard levels (may not work correctly)")
         
         target_fdr_levels = st.multiselect(
@@ -4839,15 +4854,16 @@ def display_inference_table_only(df):
     • **Precision**: Model precision (TP/(TP+FP))
     • **Recovery %**: Percentage of validated candidates successfully recovered
     • **Increase %**: Improvement over baseline peptide count
-    • **Total Validated Candidates**: Total peptides in test set that are present in ground truth
     """)
     
     # Format the dataframe for display
     display_df = df.copy()
     
-    # Remove Aggregation_Method column from display (internal use only)
-    if 'Aggregation_Method' in display_df.columns:
-        display_df = display_df.drop('Aggregation_Method', axis=1)
+    # Remove internal columns from display 
+    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates']
+    for col in columns_to_remove:
+        if col in display_df.columns:
+            display_df = display_df.drop(col, axis=1)
     
     # Format percentage columns
     display_df['Target_FDR'] = display_df['Target_FDR'].map('{:.1f}%'.format)
@@ -4867,7 +4883,6 @@ def display_inference_table_only(df):
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
             "Additional_Peptides": st.column_config.NumberColumn("Additional Unique Peptides", help="Total additional peptides identified (includes both true and false positives)"),
             "False_Positives": st.column_config.NumberColumn("False Positives", help="Model predictions not in ground truth"),
-            "Total_Validated_Candidates": st.column_config.NumberColumn("Total Validated Candidates", help="Total recoverable peptides in test set"),
             "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
             "Recovery_Pct": st.column_config.TextColumn("Recovery %", help="% of validated candidates recovered"),
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline"),

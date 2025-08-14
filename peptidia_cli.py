@@ -1541,7 +1541,7 @@ class PeptiDIACLI:
             target_fdrs = model_target_fdrs
         else:
             # Fallback to default if no model FDRs found
-            default_targets = [1.0, 2.0, 3.0, 4.0, 5.0]
+            default_targets = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
             print(f"\n{Colors.BOLD}Target FDR Levels for Optimization:{Colors.ENDC}")
             print(f"{Colors.WARNING}Model FDRs not found, using default: {', '.join(map(str, default_targets))}%{Colors.ENDC}")
             target_fdrs = default_targets
