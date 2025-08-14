@@ -22,18 +22,27 @@ cd PeptiDIA
 pip install -r requirements.txt
 ```
 
-### Step 2: Add Your Data
-Put your `.parquet` files in the `data/` folder like this:
+### Step 2: Add Your DIA-NN Data
+Put your DIA-NN analyzed `.parquet` files in the `data/` folder with these **specific FDR levels**:
 ```
 data/
   YourDataset/
     short_gradient/
-      FDR_1/
+      FDR_1/          # DIA-NN results at 1% FDR
+        your_file.parquet
+      FDR_20/         # DIA-NN results at 20% FDR  
+        your_file.parquet
+      FDR_50/         # DIA-NN results at 50% FDR
         your_file.parquet
     long_gradient/  
-      FDR_1/
+      FDR_1/          # DIA-NN results at 1% FDR only
         your_file.parquet
 ```
+
+**Important:** 
+- Data must be from **DIA-NN analysis** with FDR filtering set at these exact levels
+- Short gradient needs: **1%, 20%, and 50% FDR** results
+- Long gradient needs: **1% FDR** results only
 
 ### Step 3: Run PeptiDIA
 ```bash
