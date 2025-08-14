@@ -2953,8 +2953,6 @@ def display_results():
                     st.markdown(f"  - {filename}")
                 if len(baseline_config) > 3:
                     st.markdown(f"  - ... and {len(baseline_config) - 3} more")
-            else:
-                st.markdown(f"**Files:** Configured triplicate files")
             
             st.markdown(f"**Total unique peptides:** {summary['baseline_peptides']:,}")
             st.info("High-confidence peptides identified by DIA-NN in short gradient conditions")

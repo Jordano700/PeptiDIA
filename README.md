@@ -59,6 +59,22 @@ PeptiDIA has **3 simple modes** to guide you through the process:
 - Get results instantly
 - Download your discoveries
 
+## Command Line Interface (CLI) 💻
+
+For advanced users, PeptiDIA also provides a command-line interface:
+
+```bash
+python peptidia_cli.py --help
+```
+
+**⚠️ Note:** While the CLI is available, **we strongly recommend using the Streamlit web interface** for the full PeptiDIA experience:
+- 📊 **Interactive visualizations** - See your results in real-time
+- 🎛️ **Easy hyperparameter tuning** - Adjust settings with sliders and dropdowns
+- 🧭 **Guided navigation** - Step-by-step workflow
+- 🎯 **Better usability** - No command-line complexity
+
+The web interface provides all functionality with a much more intuitive experience!
+
 ## That's it! 🎉
 
 The interface walks you through each step - no guessing needed!
