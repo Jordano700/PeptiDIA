@@ -533,13 +533,9 @@ class PeptideValidatorAPI:
             method_mask = all_train_data['source_method'] == method
             method_peptides = all_train_data.loc[method_mask, 'Modified.Sequence']
             
-            # Get appropriate ground truth for this training method
-            if 'ASTRAL' in method:
-                # For ASTRAL training methods, use ASTRAL-specific ground truth
-                method_ground_truth = self._load_ground_truth_peptides(method)
-            else:
-                # For HEK training methods, use HEK 30SPD ground truth (all files)
-                method_ground_truth = self._load_hek_ground_truth()
+            # Get appropriate ground truth for this training method using universal approach
+            # Use the ground truth mapping to find the best matching ground truth method
+            method_ground_truth = self._load_ground_truth_peptides(method)
             
             # Label peptides for this method
             method_labels = method_peptides.isin(method_ground_truth).astype(int)
@@ -1509,3 +1505,132 @@ def run_peptide_validation(train_methods: List[str],
         feature_selection=feature_selection,
         results_dir=results_dir
     )
+
+
+# ================================================================================
+# 🎯 FLEXIBLE PEPTIDE VALIDATOR FUNCTIONS
+# ================================================================================
+# Added from flexible_peptide_validator.py to make the project self-contained
+
+# 🎨 ADVANCED FEATURE ENGINEERING CONSTANTS
+ENGINEER_LOG = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
+ENGINEER_RATIOS = [
+    ('Ms1.Area', 'Ms2.Area'),
+    ('Peak.Height', 'Ms1.Area'),
+    ('Precursor.Quantity', 'Peak.Height')
+]
+
+def make_advanced_features(df: pd.DataFrame, show_details=False) -> pd.DataFrame:
+    """Create advanced feature table optimized for maximum discrimination."""
+    feats = pd.DataFrame(index=df.index)
+    
+    # Add ALL numeric features from DIA-NN
+    numeric_count = 0
+    for col in df.columns:
+        if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
+            feats[col] = pd.to_numeric(df[col], errors='coerce')
+            numeric_count += 1
+    
+    if show_details:
+        print(f"   ✅ Added {numeric_count} numeric DIA-NN features")
+    
+    # Add engineered log features
+    log_count = 0
+    for col in ENGINEER_LOG:
+        if col in df.columns:
+            vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            feats[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
+            log_count += 1
+            if show_details:
+                print(f"   ✅ Added log transform: log_{col}")
+    
+    # Add ratio features
+    ratio_count = 0
+    for col1, col2 in ENGINEER_RATIOS:
+        if col1 in df.columns and col2 in df.columns:
+            vals1 = pd.to_numeric(df[col1], errors='coerce').fillna(0)
+            vals2 = pd.to_numeric(df[col2], errors='coerce').fillna(1)
+            feats[f'ratio_{col1}_{col2}'] = vals1 / np.maximum(vals2, 1e-10)
+            ratio_count += 1
+            if show_details:
+                print(f"   ✅ Added ratio feature: ratio_{col1}_{col2}")
+    
+    # Add sequence-based features
+    seq_count = 0
+    if 'Stripped.Sequence' in df.columns:
+        sequences = df['Stripped.Sequence'].astype(str)
+        feats['sequence_length'] = sequences.str.len()
+        
+        # Amino acid composition features
+        for aa in ['K', 'R', 'H', 'D', 'E', 'C', 'M', 'P']:
+            feats[f'aa_count_{aa}'] = sequences.str.count(aa)
+            feats[f'aa_freq_{aa}'] = feats[f'aa_count_{aa}'] / feats['sequence_length']
+        
+        seq_count = 1 + 8 + 8
+        if show_details:
+            print(f"   ✅ Added {seq_count} sequence-based features")
+    
+    # Add source FDR feature
+    if 'source_fdr' in df.columns:
+        feats['source_fdr'] = df['source_fdr']
+        if show_details:
+            print(f"   ✅ Added source_fdr feature")
+    
+    # Add statistical features
+    stat_count = 0
+    for col in ['Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity']:
+        if col in df.columns:
+            vals = pd.to_numeric(df[col], errors='coerce')
+            feats[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
+            stat_count += 1
+    
+    if show_details:
+        print(f"   ✅ Added {stat_count} statistical features (z-scores)")
+    
+    # Fill any remaining NaN values
+    feats = feats.fillna(0)
+    
+    if show_details:
+        print(f"   📊 Total advanced features: {len(feats.columns)}")
+    
+    return feats
+
+def find_optimal_threshold(y_true, y_scores, target_fdr):
+    """Find the optimal threshold that achieves exactly the target FDR."""
+    # Convert to numpy arrays
+    y_true_arr = np.array(y_true.values if hasattr(y_true, 'values') else y_true)
+    y_scores_arr = np.array(y_scores)
+    
+    # Sort by score (descending)
+    sorted_indices = np.argsort(-y_scores_arr)
+    y_scores_sorted = y_scores_arr[sorted_indices]
+    
+    best_threshold = None
+    best_peptides = 0
+    best_actual_fdr = float('inf')
+    
+    # Try different thresholds
+    for i in range(1, len(y_scores_sorted)):
+        threshold = y_scores_sorted[i]
+        
+        # Calculate FDR at this threshold
+        predictions = y_scores_arr >= threshold
+        if predictions.sum() == 0:
+            continue
+            
+        tp = (y_true_arr & predictions).sum()
+        fp = (~y_true_arr & predictions).sum()
+        
+        if tp + fp == 0:
+            continue
+            
+        actual_fdr = fp / (tp + fp) * 100
+        
+        # Check if this achieves our target FDR
+        if actual_fdr <= target_fdr:
+            if tp > best_peptides:
+                best_threshold = threshold
+                best_peptides = tp
+                best_actual_fdr = actual_fdr
+    
+    return best_threshold, best_peptides, best_actual_fdr

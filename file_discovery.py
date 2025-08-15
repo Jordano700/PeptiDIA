@@ -116,17 +116,18 @@ def extract_method_and_group_from_filename(filename):
     # Remove file extension
     base_name = Path(filename).stem
     
-    # For ASTRAL files, extract group information
-    if 'ASTRAL' in filename.upper() or any(x in filename for x in ['_001_', '_002_', '_003_', '_004_', '_005_', '_006_', '_007_', '_008_', '_009_', '_010_']):
-        # Look for patterns like _001_, _002_, etc.
-        group_match = re.search(r'_(\d{3})_', filename)
-        if group_match:
-            group_id = group_match.group(1)
-            method = f"ASTRAL_Group_{group_id}"
-            return method, group_id
+    # For files with numbered groups, extract group information (works for any dataset)
+    # Look for patterns like _001_, _002_, etc. (common across datasets)
+    group_match = re.search(r'_(\d{3})_', filename)
+    if group_match:
+        group_id = group_match.group(1)
+        # Extract dataset name from the beginning of filename or parent directory
+        dataset_name = base_name.split('_')[0] if '_' in base_name else "Unknown"
+        method = f"{dataset_name}_Group_{group_id}"
+        return method, group_id
     
-    # For HEK files, extract method from filename
-    if 'HEK' in filename.upper():
+    # For files with MS-DIA patterns, extract method from filename (works for any dataset)
+    if 'MS' in filename.upper() and 'DIA' in filename.upper():
         # Extract method patterns like MS15-DIA11-25, MS30-DIA7-5, etc.
         method_match = re.search(r'MS(\d+)-DIA([0-9\-\.]+)', filename)
         if method_match:

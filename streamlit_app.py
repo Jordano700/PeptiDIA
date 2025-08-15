@@ -20,6 +20,7 @@ import warnings
 # Suppress XGBoost CUDA device warnings for cleaner interface
 warnings.filterwarnings('ignore', message='.*Falling back to prediction using DMatrix.*')
 warnings.filterwarnings('ignore', message='.*mismatched devices.*')
+
 import os
 import json
 from pathlib import Path
@@ -32,8 +33,8 @@ import time
 from file_discovery import discover_available_files, get_available_methods, get_files_for_method, extract_method_and_group_from_filename, group_files_by_triplicates
 from dataset_utils import discover_available_files_by_dataset, extract_method_from_filename, get_configured_methods, get_files_for_configured_method
 
-# Add the scripts directory to Python path for imports
-sys.path.append('/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/scripts')
+# Import functions are now available locally in peptide_validator_api.py
+# No need for external scripts directory
 
 warnings.filterwarnings('ignore')
 
@@ -333,7 +334,7 @@ FEATURE_CATEGORY_DESCRIPTIONS = {
 
 def get_history_file_path():
     """Get the path to the persistent history file."""
-    history_dir = "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/history"
+    history_dir = "./history"
     os.makedirs(history_dir, exist_ok=True)
     return os.path.join(history_dir, "run_history.json")
 
@@ -346,10 +347,10 @@ def load_persistent_history():
                 history_data = json.load(f)
                 return history_data
         else:
-            print("📁 No persistent history file found - starting fresh")
+            # No persistent history file found - starting fresh
             return []
     except Exception as e:
-        print(f"⚠️ Error loading persistent history: {e}")
+        # Error loading persistent history
         return []
 
 def save_persistent_history(run_history):
@@ -363,7 +364,7 @@ def save_persistent_history(run_history):
             json.dump(limited_history, f, indent=2, default=str)
         return True
     except Exception as e:
-        print(f"❌ Error saving persistent history: {e}")
+        # Error saving persistent history
         return False
 
 # -----------------------------------------------
@@ -465,10 +466,10 @@ def clear_persistent_history():
     try:
         if os.path.exists(history_file):
             os.remove(history_file)
-        print("🗑️ Persistent history cleared")
+        # Persistent history cleared
         return True
     except Exception as e:
-        print(f"❌ Error clearing persistent history: {e}")
+        # Error clearing persistent history
         return False
 
 def export_history_to_csv(run_history):
@@ -531,7 +532,7 @@ def discover_available_files():
     
     Expected structure:
     data/
-    ├── [DATASET_NAME]/                    # e.g., HEK, ASTRAL, YourNewDataset
+    ├── [DATASET_NAME]/                    # e.g., MyDataset, ExperimentA, etc.
     │   ├── short_gradient/                # Training data (fast gradient)
     │   │   ├── FDR_1/                    # BASELINE files (1% FDR)
     │   │   ├── FDR_20/                   # TRAINING files (20% FDR)
@@ -608,90 +609,10 @@ def discover_available_files():
                             if fdr == 1:
                                 files_info['baseline'].append(file_info)
         
-        # FALLBACK: Legacy structure support for existing data
-        # HEK legacy structure: 30SPD/ and 300SPD/
-        if dataset_name == "HEK":
-            # Ground truth: 30SPD/FDR_1
-            legacy_gt_path = os.path.join(dataset_path, "30SPD", "FDR_1")
-            if os.path.exists(legacy_gt_path) and not os.path.exists(gt_path):
-                for file_path in glob.glob(os.path.join(legacy_gt_path, "*.parquet")):
-                    filename = Path(file_path).name
-                    method = extract_method_from_filename(filename, dataset_name)
-                    if method:
-                        files_info['ground_truth'].append({
-                            'path': file_path,
-                            'method': method,
-                            'filename': filename,
-                            'dataset': dataset_name,
-                            'gradient': '30SPD',
-                            'size_mb': os.path.getsize(file_path) / (1024*1024)
-                        })
-            
-            # Training: 300SPD/FDR_X
-            for fdr in [1, 20, 50]:
-                legacy_train_path = os.path.join(dataset_path, "300SPD", f"FDR_{fdr}")
-                if os.path.exists(legacy_train_path) and not os.path.exists(short_gradient_path):
-                    for file_path in glob.glob(os.path.join(legacy_train_path, "*.parquet")):
-                        filename = Path(file_path).name
-                        method = extract_method_from_filename(filename, dataset_name)
-                        if method:
-                            file_info = {
-                                'path': file_path,
-                                'method': method,
-                                'filename': filename,
-                                'fdr': fdr,
-                                'dataset': dataset_name,
-                                'gradient': '300SPD',
-                                'size_mb': os.path.getsize(file_path) / (1024*1024)
-                            }
-                            files_info['training'].append(file_info)
-                            files_info['testing'].append(file_info)
-                            
-                            # FDR_1 files from short gradient are also baseline files
-                            if fdr == 1:
-                                files_info['baseline'].append(file_info)
+        # Legacy dataset-specific structures removed for universal compatibility
+        # Users should structure data according to the standard format described above
         
-        # ASTRAL legacy structure: 28min/ and 7min/
-        elif dataset_name == "ASTRAL":
-            # Ground truth: 28min/FDR_1
-            legacy_gt_path = os.path.join(dataset_path, "28min", "FDR_1")
-            if os.path.exists(legacy_gt_path) and not os.path.exists(gt_path):
-                for file_path in glob.glob(os.path.join(legacy_gt_path, "*.parquet")):
-                    filename = Path(file_path).name
-                    method = extract_method_from_filename(filename, dataset_name)
-                    if method:
-                        files_info['ground_truth'].append({
-                            'path': file_path,
-                            'method': method,
-                            'filename': filename,
-                            'dataset': dataset_name,
-                            'gradient': '28min',
-                            'size_mb': os.path.getsize(file_path) / (1024*1024)
-                        })
-            
-            # Training: 7min/FDR_X
-            for fdr in [1, 20, 50]:
-                legacy_train_path = os.path.join(dataset_path, "7min", f"FDR_{fdr}")
-                if os.path.exists(legacy_train_path) and not os.path.exists(short_gradient_path):
-                    for file_path in glob.glob(os.path.join(legacy_train_path, "*.parquet")):
-                        filename = Path(file_path).name
-                        method = extract_method_from_filename(filename, dataset_name)
-                        if method:
-                            file_info = {
-                                'path': file_path,
-                                'method': method,
-                                'filename': filename,
-                                'fdr': fdr,
-                                'dataset': dataset_name,
-                                'gradient': '7min',
-                                'size_mb': os.path.getsize(file_path) / (1024*1024)
-                            }
-                            files_info['training'].append(file_info)
-                            files_info['testing'].append(file_info)
-                            
-                            # FDR_1 files from short gradient are also baseline files
-                            if fdr == 1:
-                                files_info['baseline'].append(file_info)
+        # All legacy dataset-specific structures removed for universal compatibility
     
     return files_info
 
@@ -878,56 +799,7 @@ def discover_datasets_for_setup(config, results, runtime_minutes):
                                     datasets_info[dataset_name]['training'][fdr_key][method] = []
                                 datasets_info[dataset_name]['training'][fdr_key][method].append(file_info)
         
-        # FALLBACK: Legacy structure support for existing data
-        # HEK legacy structure: 30SPD/ and 300SPD/
-        if dataset_name == "HEK":
-            # Ground truth: 30SPD/FDR_1
-            legacy_gt_path = os.path.join(dataset_path, "30SPD", "FDR_1")
-            if os.path.exists(legacy_gt_path) and not os.path.exists(gt_path):
-                for file_path in glob.glob(os.path.join(legacy_gt_path, "*.parquet")):
-                    filename = Path(file_path).name
-                    method = extract_method_from_filename(filename, dataset_name)
-                    if method:
-                        if method not in datasets_info[dataset_name]['ground_truth']:
-                            datasets_info[dataset_name]['ground_truth'][method] = []
-                        datasets_info[dataset_name]['ground_truth'][method].append({
-                            'path': file_path,
-                            'method': method,
-                            'filename': filename,
-                            'dataset': dataset_name,
-                            'gradient': '30SPD',
-                            'size_mb': os.path.getsize(file_path) / (1024*1024)
-                        })
-            
-            # Training: 300SPD/FDR_X
-            for fdr in [1, 20, 50]:
-                legacy_train_path = os.path.join(dataset_path, "300SPD", f"FDR_{fdr}")
-                if os.path.exists(legacy_train_path) and not os.path.exists(short_gradient_path):
-                    for file_path in glob.glob(os.path.join(legacy_train_path, "*.parquet")):
-                        filename = Path(file_path).name
-                        method = extract_method_from_filename(filename, dataset_name)
-                        if method:
-                            file_info = {
-                                'path': file_path,
-                                'method': method,
-                                'filename': filename,
-                                'fdr': fdr,
-                                'dataset': dataset_name,
-                                'gradient': '300SPD',
-                                'size_mb': os.path.getsize(file_path) / (1024*1024)
-                            }
-                            
-                            if fdr == 1:
-                                # Baseline files
-                                if method not in datasets_info[dataset_name]['baseline']:
-                                    datasets_info[dataset_name]['baseline'][method] = []
-                                datasets_info[dataset_name]['baseline'][method].append(file_info)
-                            else:
-                                # Training files
-                                fdr_key = str(fdr)
-                                if method not in datasets_info[dataset_name]['training'][fdr_key]:
-                                    datasets_info[dataset_name]['training'][fdr_key][method] = []
-                                datasets_info[dataset_name]['training'][fdr_key][method].append(file_info)
+        # Legacy dataset-specific structures removed for universal compatibility
         
         # Remove empty datasets
         if (not datasets_info[dataset_name]['training']['20'] and 
@@ -1005,7 +877,7 @@ def add_to_run_history(config, results, runtime_minutes):
     
     # Save to persistent storage
     save_result = save_persistent_history(st.session_state.run_history)
-    print(f"💾 Saved run {run_id} to history (success: {save_result})")
+    # Saved run to history
 
 def display_run_history():
     """Display enhanced run history with comparison capabilities."""
@@ -1604,7 +1476,7 @@ def show_training_interface():
             # Show only first 5 files for performance
             display_files = filtered_baseline[:5]
             for file_info in display_files:
-                dataset_icon = "🧬" if file_info.get('dataset') == 'HEK' else "⚡"
+                dataset_icon = "📊"  # Generic dataset icon
                 st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • FDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
             if len(filtered_baseline) > 5:
                 st.markdown(f"*... and {len(filtered_baseline) - 5} more baseline files*")
@@ -1616,7 +1488,7 @@ def show_training_interface():
             # Show only first 5 files for performance
             display_files = filtered_ground_truth[:5]
             for file_info in display_files:
-                dataset_icon = "🧬" if file_info.get('dataset') == 'HEK' else "⚡"
+                dataset_icon = "📊"  # Generic dataset icon
                 st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • Size: {file_info['size_mb']:.1f} MB")
             if len(filtered_ground_truth) > 5:
                 st.markdown(f"*... and {len(filtered_ground_truth) - 5} more ground truth files*")
@@ -1628,7 +1500,7 @@ def show_training_interface():
             # Show only first 5 files for performance
             display_files = filtered_training[:5]
             for file_info in display_files:
-                dataset_icon = "🧬" if file_info.get('dataset') == 'HEK' else "⚡"
+                dataset_icon = "📊"  # Generic dataset icon
                 st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • FDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
             if len(filtered_training) > 5:
                 st.markdown(f"*... and {len(filtered_training) - 5} more training files*")
@@ -2023,14 +1895,8 @@ def show_training_interface():
         # Analysis in progress
         st.markdown("## 🔬 Training in Progress")
         
-        # DNA loading animation
-        dna_gif_path = "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/dna_loading.gif"
-        
-        # Check multiple possible locations for the DNA GIF
+        # DNA loading animation - check local paths only
         possible_paths = [
-            dna_gif_path,
-            "/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/assets/dna_loading.gif",
-            "/home/jordano/dia_gradient_identification/dna_loading.gif",
             "./assets/dna_loading.gif",
             "./dna_loading.gif"
         ]
@@ -4248,11 +4114,11 @@ def discover_saved_models():
 def run_inference(selected_model, test_method, test_fdr, target_fdr_levels):
     """Run inference using the selected model and display results."""
     
-    # Import the flexible peptide validator functions
+    # Import the flexible peptide validator functions from local API
     try:
-        from flexible_peptide_validator import make_advanced_features, find_optimal_threshold
+        from peptide_validator_api import make_advanced_features, find_optimal_threshold
     except ImportError:
-        st.error("Could not import flexible_peptide_validator functions. Please ensure the module is available.")
+        st.error("Could not import flexible_peptide_validator functions from local API. Please ensure the module is available.")
         return
     
     # Create progress container
@@ -4336,21 +4202,14 @@ def run_single_inference(config):
     
     # Load and prepare data (similar to training pipeline)
     try:
-        st.write(f"DEBUG - Loading baseline peptides for {test_method}...")
         # Load baseline and ground truth
         baseline_peptides = load_baseline_peptides_inference(test_method)
-        st.write(f"DEBUG - Loaded {len(baseline_peptides)} baseline peptides")
-        
-        st.write(f"DEBUG - Loading ground truth peptides for {test_method}...")
         ground_truth_peptides = load_ground_truth_peptides_inference(test_method)
-        st.write(f"DEBUG - Loaded {len(ground_truth_peptides)} ground truth peptides")
         
-        st.write(f"DEBUG - Loading test data at {test_fdr}% FDR...")
         # Load test data
         test_data, y_test_true, additional_peptides = load_test_data_inference(
             [test_method], test_fdr, baseline_peptides, ground_truth_peptides
         )
-        st.write(f"DEBUG - Loaded test data shape: {test_data.shape}, additional peptides: {len(additional_peptides)}")
         
         if len(additional_peptides) == 0:
             return {
@@ -4369,10 +4228,8 @@ def run_single_inference(config):
                 'ground_truth_peptides': len(ground_truth_peptides)
             }
         
-        # Create features (import from the validator script)
-        import sys
-        sys.path.append('/home/jordano/dia_gradient_identification/organized/analysis/enhanced_peptide_validator/scripts')
-        from flexible_peptide_validator import make_advanced_features
+        # Create features (import from the local API)
+        from peptide_validator_api import make_advanced_features
         
         X_test = make_advanced_features(test_data, show_details=False)
         
@@ -4402,7 +4259,7 @@ def run_single_inference(config):
             y_pred_proba = model.predict(X_test)
         
         # Find optimal threshold for target FDR
-        from flexible_peptide_validator import find_optimal_threshold
+        from peptide_validator_api import find_optimal_threshold
         optimal_threshold = find_optimal_threshold(y_test_true, y_pred_proba, target_fdr)
         
         # Make predictions
@@ -4967,20 +4824,9 @@ def load_baseline_peptides_inference(test_method=None):
 
 def get_matching_ground_truth_method(test_method):
     """Get the appropriate ground truth method for a given test method."""
-    # ASTRAL-specific matching
-    if 'ASTRAL_001' in test_method:
-        return 'ASTRAL_GT_001'  # RR-073 for 001 set
-    elif 'ASTRAL_002' in test_method:
-        return 'ASTRAL_GT_002'  # RR-074 for 002 set
-    elif 'ASTRAL_003' in test_method:
-        return 'ASTRAL_GT_003'  # RR-075 for 003 set
-    elif 'ASTRAL' in test_method:
-        # Default to general ASTRAL ground truth
-        return 'ASTRAL_28min_GT'
-    else:
-        # For other datasets, return None to use automatic discovery
-        # The calling function will find the best ground truth match
-        return None
+    # Use automatic discovery for all datasets to maintain universal compatibility
+    # The calling function will find the best ground truth match based on available data
+    return None
 
 def load_ground_truth_peptides_inference(test_method=None):
     """Load ground truth peptides for inference, with automatic matching for methods."""
@@ -4999,7 +4845,7 @@ def load_ground_truth_peptides_inference(test_method=None):
             target_gt_method = get_matching_ground_truth_method(test_method)
             
             if target_gt_method:
-                # Look for the specific matching ground truth (ASTRAL-specific)
+                # Look for the specific matching ground truth method
                 matching_files = [f for f in ground_truth_files if f['method'] == target_gt_method]
                 if matching_files:
                     st.success(f"🎯 Using matched ground truth: {target_gt_method} for test method {test_method}")
