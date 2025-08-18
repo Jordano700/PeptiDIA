@@ -1586,10 +1586,14 @@ def show_training_interface():
     
     # Advanced parameters
     with st.sidebar.expander("🔧 Advanced Parameters"):
-        learning_rate = st.slider("Learning Rate", 0.01, 0.3, 0.08, 0.01)
-        max_depth = st.slider("Max Depth", 3, 10, 7, 1)
-        n_estimators = st.slider("N Estimators", 100, 2000, 1000, 100)
-        subsample = st.slider("Subsample", 0.5, 1.0, 0.8, 0.1)
+        learning_rate = st.slider("Learning Rate", 0.01, 0.3, 0.08, 0.01,
+                                 help="Controls how much to change the model in response to errors. Lower values = more conservative learning, higher values = faster learning but risk overfitting")
+        max_depth = st.slider("Max Depth", 3, 10, 7, 1,
+                            help="Maximum depth of each decision tree. Deeper trees can model more complex patterns but may overfit to training data")
+        n_estimators = st.slider("N Estimators", 100, 2000, 1000, 100,
+                                help="Number of boosting rounds (trees) to build. More estimators generally improve performance but increase training time")
+        subsample = st.slider("Subsample", 0.5, 1.0, 0.8, 0.1,
+                            help="Fraction of training samples used for each tree. Lower values help prevent overfitting by introducing randomness")
     
     # Feature selection
     with st.sidebar.expander("🎯 Feature Selection"):
