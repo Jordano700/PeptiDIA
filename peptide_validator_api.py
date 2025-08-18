@@ -29,7 +29,7 @@ from sklearn.metrics import (
     classification_report,
     precision_recall_curve
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 import os
@@ -138,6 +138,11 @@ class PeptideValidatorAPI:
         """
         
         try:
+            # Ensure deterministic behavior across runs
+            try:
+                np.random.seed(42)
+            except Exception:
+                pass
             # Store feature selection preferences
             self.feature_selection = feature_selection or {
                 'use_diann_quality': True,
@@ -301,40 +306,35 @@ class PeptideValidatorAPI:
         return baseline_peptides
     
     def _load_ground_truth_peptides(self, test_method: str = None) -> set:
-        """Load ground truth peptides using configuration-based matching."""
-        # Get available files using the new file discovery system
+        """Load ground truth peptides using configuration-based matching.
+
+        If no configured match is found, return an empty set (discovery mode).
+        """
         files_info_by_dataset = discover_available_files_by_dataset()
-        
-        # Find ground truth files using universal matching
+
         ground_truth_files = self._get_matching_ground_truth_files(test_method, files_info_by_dataset)
-        
-        dataset_name = self._get_dataset_name(test_method)
+
         ground_truth_peptides = set()
-        
-        
+
         for file_path in ground_truth_files:
             try:
-                filename = Path(file_path).name
-                
                 df = pd.read_parquet(file_path)
                 file_peptides = set(df['Modified.Sequence'].unique())
                 ground_truth_peptides.update(file_peptides)
             except Exception as e:
                 print(f"   Error loading {file_path}: {e}")
-                continue  # Skip problematic files
-        
+                continue
+
         return ground_truth_peptides
     
     def _get_matching_ground_truth_files(self, test_method: str, files_info_by_dataset: dict) -> list:
-        """Get matching ground truth files using configuration-based strategy."""
+        """Get matching ground truth files using configuration-based strategy.
+
+        No dataset-wide or cross-dataset fallback. If no exact mapping resolution, returns [].
+        """
         if not test_method:
-            # Fallback: use all ground truth files
-            all_gt_files = []
-            for dataset_info in files_info_by_dataset.values():
-                gt_files = dataset_info.get('ground_truth', {})
-                for method_files in gt_files.values():
-                    all_gt_files.extend([f['path'] for f in method_files])
-            return all_gt_files
+            # No method provided → discovery mode
+            return []
         
         # Extract dataset from method name
         dataset_name = test_method.split('_')[0] if '_' in test_method else 'Unknown'
@@ -358,7 +358,7 @@ class PeptideValidatorAPI:
         strategy = ground_truth_mapping.get('_strategy', 'pattern_matching')
         
         if strategy == 'use_all_ground_truth':
-            # Strategy: Use all ground truth files from this dataset
+            # Only honor this if explicitly configured; otherwise prefer strict behavior
             matched_files = [f['path'] for f in dataset_gt_files]
             print(f"Using all {len(matched_files)} ground truth files for {dataset_name}")
             return matched_files
@@ -371,27 +371,21 @@ class PeptideValidatorAPI:
             # Look for direct mapping of this method
             if test_method in direct_rules:
                 target_gt_filenames = direct_rules[test_method]
-                
-                # Handle both single file (string) and multiple files (list) for backward compatibility
+
                 if isinstance(target_gt_filenames, str):
                     target_gt_filenames = [target_gt_filenames]
-                
-                # Find the exact ground truth files
-                available_methods = [gt_file['method'] for gt_file in dataset_gt_files]
-                
+
                 for target_gt_filename in target_gt_filenames:
                     for gt_file in dataset_gt_files:
                         if target_gt_filename == gt_file['method']:
                             matched_files.append(gt_file['path'])
                             break
-                
+
                 if not matched_files:
-                    print(f"Warning: Direct mapping failed for {test_method} -> {target_gt_filenames}, using all {dataset_name} files")
-                    matched_files = [f['path'] for f in dataset_gt_files]
+                    print(f"Info: Direct mapping has no existing files for {test_method} -> {target_gt_filenames}. Discovery mode.")
             else:
-                print(f"Warning: No direct mapping found for {test_method}, using all {dataset_name} files")
-                matched_files = [f['path'] for f in dataset_gt_files]
-            
+                print(f"Info: No direct mapping found for {test_method}. Discovery mode.")
+
             return matched_files
         
         elif strategy == 'pattern_matching' or '_pattern_rules' in ground_truth_mapping:
@@ -419,19 +413,16 @@ class PeptideValidatorAPI:
                         print(f"Warning: No ground truth file found for pattern {target_pattern}, using all {dataset_name} files")
                         matched_files = [f['path'] for f in dataset_gt_files]
                 else:
-                    print(f"Warning: No mapping rule for pattern {method_pattern}, using all {dataset_name} files")
-                    matched_files = [f['path'] for f in dataset_gt_files]
+                    print(f"Info: No mapping rule for pattern {method_pattern}. Discovery mode.")
             else:
-                print(f"Warning: No pattern found in method {test_method}, using all {dataset_name} files")
-                matched_files = [f['path'] for f in dataset_gt_files]
-            
+                print(f"Info: No pattern found in method {test_method}. Discovery mode.")
+
             return matched_files
         
         else:
-            # Default: use all files from same dataset
-            matched_files = [f['path'] for f in dataset_gt_files]
-            print(f"Using default strategy: all {len(matched_files)} ground truth files for {dataset_name}")
-            return matched_files
+            # Default: no ground truth (discovery mode)
+            print(f"Info: Unknown strategy '{strategy}' for {dataset_name}'. Discovery mode.")
+            return []
     
     def _load_dataset_config(self, dataset_name: str) -> dict:
         """Load dataset configuration from dataset_info.json."""
@@ -447,10 +438,11 @@ class PeptideValidatorAPI:
             except Exception as e:
                 print(f"Warning: Could not load config for {dataset_name}: {e}")
         
-        # Return default configuration
+        # Return conservative default configuration (no implicit fallback)
         return {
             'ground_truth_mapping': {
-                '_strategy': 'use_all_ground_truth'
+                '_strategy': 'direct_mapping',
+                '_direct_rules': {}
             }
         }
     
@@ -569,7 +561,7 @@ class PeptideValidatorAPI:
         files_info = discover_available_files()
         
         # Find test files for this method and FDR level using configured method handling
-        test_files = get_files_for_configured_method(test_method, test_fdr)
+        test_files = sorted(get_files_for_configured_method(test_method, test_fdr))
         
         test_data = []
         for file_path in test_files:
@@ -584,6 +576,10 @@ class PeptideValidatorAPI:
             raise ValueError(f"No test files found for {test_method} at {test_fdr}% FDR")
         
         test_data = pd.concat(test_data, ignore_index=True)
+        # Stable sort to ensure deterministic downstream operations
+        sort_cols = [c for c in ['Modified.Sequence', 'Stripped.Sequence', 'RT', 'Precursor.Mz'] if c in test_data.columns]
+        if sort_cols:
+            test_data = test_data.sort_values(by=sort_cols).reset_index(drop=True)
         
         # Filter to additional peptides only
         test_peptides = set(test_data['Modified.Sequence'].unique())
@@ -591,6 +587,8 @@ class PeptideValidatorAPI:
         
         additional_mask = test_data['Modified.Sequence'].isin(additional_peptides)
         additional_test_data = test_data[additional_mask].copy()
+        if sort_cols:
+            additional_test_data = additional_test_data.sort_values(by=sort_cols).reset_index(drop=True)
         
         # Create labels
         y_test = additional_test_data['Modified.Sequence'].isin(ground_truth_peptides)
@@ -764,8 +762,9 @@ class PeptideValidatorAPI:
         # Train ensemble
         ensemble.fit(X_train_fold, y_train_fold)
         
-        # Calibrate model
-        calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=3)
+        # Calibrate model with deterministic folds
+        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+        calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
         calibrated_model.fit(X_train, y_train)
         
         return calibrated_model, X_train.columns.tolist()
@@ -908,7 +907,9 @@ class PeptideValidatorAPI:
         
         valid_thresholds_found = 0
         
-        for threshold in reversed(sorted(threshold_grid)):  # Start from highest threshold
+        # Deterministic threshold iteration: highest to lowest, stable sorting
+        threshold_grid_sorted = np.array(sorted(threshold_grid))
+        for threshold in threshold_grid_sorted[::-1]:  # Start from highest threshold
             predictions = y_scores_arr >= threshold
             if predictions.sum() == 0:
                 continue
@@ -937,11 +938,17 @@ class PeptideValidatorAPI:
                 else:
                     score = tp * 0.5  # Penalize if over target but within tolerance
                 
-                if (best_threshold is None or 
-                    score > (best_peptides if best_actual_fdr <= target_fdr else best_peptides * 0.5)):
+                # Deterministic tie-breaking: prefer higher threshold first, then more peptides
+                if best_threshold is None:
                     best_threshold = threshold
                     best_peptides = tp
                     best_actual_fdr = actual_fdr
+                else:
+                    current_score = (best_peptides if best_actual_fdr <= target_fdr else best_peptides * 0.5)
+                    if score > current_score:
+                        best_threshold = threshold
+                        best_peptides = tp
+                        best_actual_fdr = actual_fdr
         
         if verbose:
             threshold_str = f"{best_threshold:.6f}" if best_threshold is not None else "None"
@@ -974,17 +981,17 @@ class PeptideValidatorAPI:
         
         # Aggregate by peptide sequence
         if aggregation_method == 'mean':
-            peptide_agg = agg_df.groupby(seq_column).agg({
+            peptide_agg = agg_df.groupby(seq_column, sort=True, as_index=False).agg({
                 'prediction_prob': 'mean',
                 'label': 'first',  # Should be same for all rows of same peptide
                 'source_fdr': 'first'
-            }).reset_index()
+            })
         elif aggregation_method == 'max':
-            peptide_agg = agg_df.groupby(seq_column).agg({
+            peptide_agg = agg_df.groupby(seq_column, sort=True, as_index=False).agg({
                 'prediction_prob': 'max',
                 'label': 'first',
                 'source_fdr': 'first'
-            }).reset_index()
+            })
         elif aggregation_method == 'weighted':
             # Weight by intensity if available
             if 'Peak.Height' in agg_df.columns:
@@ -993,7 +1000,7 @@ class PeptideValidatorAPI:
                 )
                 agg_df['weight'] = weights
                 
-                peptide_agg = agg_df.groupby(seq_column).apply(
+                peptide_agg = agg_df.groupby(seq_column, sort=True).apply(
                     lambda group: pd.Series({
                         'prediction_prob': (group['prediction_prob'] * group['weight']).sum(),
                         'label': group['label'].iloc[0],
@@ -1002,11 +1009,11 @@ class PeptideValidatorAPI:
                 ).reset_index()
             else:
                 # Fallback to mean if no intensity
-                peptide_agg = agg_df.groupby(seq_column).agg({
+                peptide_agg = agg_df.groupby(seq_column, sort=True, as_index=False).agg({
                     'prediction_prob': 'mean',
                     'label': 'first',
                     'source_fdr': 'first'
-                }).reset_index()
+                })
         
         # Extract aggregated values
         peptide_data = peptide_agg[[seq_column, 'source_fdr']]
@@ -1045,7 +1052,7 @@ class PeptideValidatorAPI:
         # Now optimize thresholds using unique peptides
         results = []
         
-        for target_fdr in target_fdr_levels:
+        for target_fdr in sorted(target_fdr_levels):
             threshold, peptides, actual_fdr = self._find_optimal_threshold(
                 peptide_labels, peptide_predictions, target_fdr
             )

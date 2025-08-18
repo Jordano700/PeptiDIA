@@ -2903,7 +2903,7 @@ def display_results():
                     st.markdown(f"**Validated candidates (in ground truth):** {validated_candidates:,} ({validation_rate:.1f}% of candidates)")
                     st.info(f"Only {validated_candidates:,} out of {additional_candidates:,} additional candidates are actually present in the ground truth")
             
-            st.success("💡 Our ML model identifies which validated candidates are real peptides vs false positives")
+            st.success("💡 Our ML model identifies which additional candidates are real peptides vs false positives")
     
     # Color scheme selector in main interface
     st.markdown("---")
@@ -3002,13 +3002,25 @@ def display_results():
 def display_overview_plots(df):
     """Display overview plots using Plotly."""
     
+    # Check if we're in discovery mode (all Actual_FDR values are 0)
+    is_discovery_mode = df['Actual_FDR'].max() == 0 and df['Additional_Peptides'].max() > 0
+    
     col1, col2 = st.columns(2)
     
     with col1:
-        # FDR vs Additional Peptides
-        fig = px.line(df, x='Target_FDR', y='Additional_Peptides', 
-                     title='FDR vs Additional Peptides',
-                     color_discrete_sequence=[CHART_COLORS['line_primary']])
+        if is_discovery_mode:
+            # Discovery mode: show discovered peptides vs FDR level
+            fig = px.line(df, x='Target_FDR', y='Additional_Peptides', 
+                         title='🔬 Discovered Peptides by FDR Level',
+                         color_discrete_sequence=[CHART_COLORS['line_primary']])
+            fig.update_xaxes(title="Target FDR Level (%)")
+            fig.update_yaxes(title="Discovered Peptides")
+        else:
+            # Validation mode: normal FDR vs Additional Peptides
+            fig = px.line(df, x='Target_FDR', y='Additional_Peptides', 
+                         title='FDR vs Additional Peptides',
+                         color_discrete_sequence=[CHART_COLORS['line_primary']])
+        
         fig.update_traces(mode='lines+markers', line=dict(width=3), marker=dict(size=8))
         fig.update_layout(
             plot_bgcolor='white',
@@ -3023,93 +3035,151 @@ def display_overview_plots(df):
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        # Actual vs Target FDR
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df['Target_FDR'], 
-            y=df['Actual_FDR'],
-            mode='lines+markers',
-            name='Actual FDR',
-            line=dict(color=CHART_COLORS['line_secondary'], width=3),
-            marker=dict(size=8)
-        ))
-        fig.add_trace(go.Scatter(
-            x=df['Target_FDR'], 
-            y=df['Target_FDR'],
-            mode='lines',
-            name='Perfect Control',
-            line=dict(color=CHART_COLORS['line_target'], width=2, dash='dash')
-        ))
-        fig.update_layout(
-            title='FDR Control Precision',
-            xaxis_title='Target FDR (%)',
-            yaxis_title='Actual FDR (%)',
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            font=dict(family="Inter", size=12),
-            title_font_size=14,
-            height=400,  # Better height for 2-column layout with sidebar
-            margin=dict(l=50, r=20, t=60, b=50),
-            xaxis=dict(gridcolor='lightgray'),
-            yaxis=dict(gridcolor='lightgray')
-        )
+        if is_discovery_mode:
+            # Discovery mode: show prediction confidence distribution
+            fig = px.bar(df, x='Target_FDR', y='Threshold',
+                        title='🎯 Model FDR Thresholds',
+                        color_discrete_sequence=[CHART_COLORS['bar_primary']])
+            fig.update_xaxes(title="Target FDR Level (%)")
+            fig.update_yaxes(title="Prediction Threshold")
+            fig.update_layout(
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family="Inter", size=12),
+                title_font_size=14,
+                height=400,
+                margin=dict(l=50, r=20, t=60, b=50)
+            )
+        else:
+            # Validation mode: normal FDR control plot
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=df['Target_FDR'], 
+                y=df['Actual_FDR'],
+                mode='lines+markers',
+                name='Actual FDR',
+                line=dict(color=CHART_COLORS['line_secondary'], width=3),
+                marker=dict(size=8)
+            ))
+            fig.add_trace(go.Scatter(
+                x=df['Target_FDR'], 
+                y=df['Target_FDR'],
+                mode='lines',
+                name='Perfect Control',
+                line=dict(color=CHART_COLORS['line_target'], width=2, dash='dash')
+            ))
+            fig.update_layout(
+                title='FDR Control Precision',
+                xaxis_title='Target FDR (%)',
+                yaxis_title='Actual FDR (%)',
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family="Inter", size=12),
+                title_font_size=14,
+                height=400,  # Better height for 2-column layout with sidebar
+                margin=dict(l=50, r=20, t=60, b=50),
+                xaxis=dict(gridcolor='lightgray'),
+                yaxis=dict(gridcolor='lightgray')
+            )
+        
         st.plotly_chart(fig, use_container_width=True)
 
 def display_detailed_plots(df):
     """Display detailed interactive plots."""
     
-    # Bar chart of additional peptides by target FDR
-    fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
-                title='Additional Peptides by Target FDR',
-                orientation='v',  # Explicitly set vertical orientation
-                color_discrete_sequence=[CHART_COLORS['bar_primary']])
+    # Check if we're in discovery mode (all Actual_FDR values are 0)
+    is_discovery_mode = df['Actual_FDR'].max() == 0 and df['Additional_Peptides'].max() > 0
     
-    fig.update_layout(
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        font=dict(family="Inter", size=12),
-        title_font_size=16,
-        height=500,  # Fixed height for better appearance with sidebar
-        margin=dict(l=60, r=30, t=80, b=60),  # Better margins for sidebar layout
-        xaxis=dict(
-            gridcolor='lightgray',
-            title='Target FDR (%)'
-        ),
-        yaxis=dict(
-            gridcolor='lightgray',
-            title='Additional Peptides'
+    if is_discovery_mode:
+        # Discovery mode: show only relevant plots
+        fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
+                    title='🔬 Discovered Peptides by FDR Level',
+                    orientation='v',
+                    color_discrete_sequence=[CHART_COLORS['bar_primary']])
+        
+        fig.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(family="Inter", size=12),
+            title_font_size=16,
+            height=500,
+            margin=dict(l=60, r=30, t=80, b=60),
+            xaxis=dict(
+                gridcolor='lightgray',
+                title='Target FDR Level (%)'
+            ),
+            yaxis=dict(
+                gridcolor='lightgray',
+                title='Discovered Peptides'
+            ),
+            annotations=[
+                dict(
+                    text="Discovery mode: No ground truth available for validation metrics",
+                    x=0.5, y=1.05, xref='paper', yref='paper',
+                    showarrow=False, font=dict(size=10, color=CHART_COLORS['neutral']),
+                    xanchor='center'
+                )
+            ]
         )
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    
-    # Recovery percentage plot with enhanced context
-    fig = px.line(df, x='Target_FDR', y='Recovery_Pct',
-                 title='Recovery Rate: What % of Validated Candidates Were Successfully Identified',
-                 color_discrete_sequence=[CHART_COLORS['line_primary']])
-    
-    fig.update_traces(mode='lines+markers', line=dict(width=3), marker=dict(size=8))
-    fig.update_layout(
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        font=dict(family="Inter", size=12),
-        title_font_size=16,
-        height=500,  # Fixed height for better appearance with sidebar
-        margin=dict(l=60, r=30, t=120, b=60),  # Extra top margin for annotation
-        xaxis=dict(gridcolor='lightgray', title='Target FDR (%)'),
-        yaxis=dict(gridcolor='lightgray', title='Recovery Percentage (%)'),
-        annotations=[
-            dict(
-                text="Shows what % of validated candidates (peptides confirmed by ground truth)<br>were successfully recovered by the ML model",
-                x=0.5, y=1.1, xref='paper', yref='paper',
-                showarrow=False, font=dict(size=10, color=CHART_COLORS['neutral']),
-                xanchor='center'
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        
+        
+    else:
+        # Validation mode: show both plots
+        
+        # Bar chart of additional peptides by target FDR
+        fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
+                    title='Additional Peptides by Target FDR',
+                    orientation='v',  # Explicitly set vertical orientation
+                    color_discrete_sequence=[CHART_COLORS['bar_primary']])
+        
+        fig.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(family="Inter", size=12),
+            title_font_size=16,
+            height=500,  # Fixed height for better appearance with sidebar
+            margin=dict(l=60, r=30, t=80, b=60),  # Better margins for sidebar layout
+            xaxis=dict(
+                gridcolor='lightgray',
+                title='Target FDR (%)'
+            ),
+            yaxis=dict(
+                gridcolor='lightgray',
+                title='Additional Peptides'
             )
-        ]
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Recovery percentage plot with enhanced context
+        fig = px.line(df, x='Target_FDR', y='Recovery_Pct',
+                     title='Recovery Rate: What % of Validated Candidates Were Successfully Identified',
+                     color_discrete_sequence=[CHART_COLORS['line_primary']])
+        
+        fig.update_traces(mode='lines+markers', line=dict(width=3), marker=dict(size=8))
+        fig.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(family="Inter", size=12),
+            title_font_size=16,
+            height=500,  # Fixed height for better appearance with sidebar
+            margin=dict(l=60, r=30, t=120, b=60),  # Extra top margin for annotation
+            xaxis=dict(gridcolor='lightgray', title='Target FDR (%)'),
+            yaxis=dict(gridcolor='lightgray', title='Recovery Percentage (%)'),
+            annotations=[
+                dict(
+                    text="Shows what % of validated candidates (peptides confirmed by ground truth)<br>were successfully recovered by the ML model",
+                    x=0.5, y=1.1, xref='paper', yref='paper',
+                    showarrow=False, font=dict(size=10, color=CHART_COLORS['neutral']),
+                    xanchor='center'
+                )
+            ]
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
 def display_data_tables(df):
     """Display interactive data tables with enhanced context."""
@@ -3352,13 +3422,42 @@ def show_inference_interface():
                     else:
                         best_result = results_df.iloc[0]  # Fallback to first result
                     
-                    # Key performance metrics (same as training mode)
-                    st.markdown("### 🏆 Best Performance Achieved")
+                    # Detect discovery mode
+                    is_discovery_mode = results_df['Actual_FDR'].max() == 0 and results_df['Additional_Peptides'].max() > 0
+                    
+                    # Key performance metrics - adapted for discovery mode
+                    if is_discovery_mode:
+                        st.markdown("### 🔬 Discovery Results Summary")
+                    else:
+                        st.markdown("### 🏆 Best Performance Achieved")
+                        
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
+                        if is_discovery_mode:
+                            # Try to get baseline peptides from inference results
+                            baseline_peptides = 0
+                            if hasattr(st.session_state, 'inference_results'):
+                                baseline_peptides = st.session_state.inference_results.get('summary', {}).get('baseline_peptides', 
+                                                  st.session_state.inference_results.get('baseline_peptides', 0))
+                            st.metric("Baseline Peptides", f"{baseline_peptides:,}" if baseline_peptides > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
+                        else:
+                            st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
                     with col2:
-                        st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
+                        if is_discovery_mode:
+                            # Show discovered peptides at 5% FDR as an example
+                            fdr_5_result = None
+                            for result in results_df.itertuples():
+                                if result.Target_FDR == 5.0:
+                                    fdr_5_result = result
+                                    break
+                            
+                            if fdr_5_result:
+                                peptide_count = int(fdr_5_result.Additional_Peptides)
+                                st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
+                            else:
+                                st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
+                        else:
+                            st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
                     with col3:
                         # Try to get the actual test method name from session state or inference results
                         actual_test_method = "Test Method"  # Default fallback
@@ -3368,7 +3467,10 @@ def show_inference_interface():
                             actual_test_method = st.session_state.selected_test_method
                         st.metric("Method Tested", actual_test_method, delta=None, help="MS method used for inference testing")
                     with col4:
-                        st.metric("Analysis Type", "Inference", delta=None, help="Model inference analysis")
+                        if is_discovery_mode:
+                            st.metric("Analysis Type", "Discovery", delta=None, help="Discovery mode - no ground truth validation")
+                        else:
+                            st.metric("Analysis Type", "Inference", delta=None, help="Model inference analysis")
                     
                     # Check if we have ground truth data available for this test set
                     has_ground_truth = False
@@ -3470,23 +3572,8 @@ def show_inference_interface():
                                         st.markdown(f"**Validated candidates (in ground truth):** {validated_candidates:,} ({validation_rate:.1f}% of candidates)")
                                         st.info(f"Only {validated_candidates:,} out of {additional_candidates:,} additional candidates are actually present in the ground truth")
                                 
-                                st.success("💡 Our ML model identifies which validated candidates are real peptides vs false positives")
-                    else:
-                        # Show a simplified section when no ground truth is available
-                        st.markdown("### 🔍 Test Data Analysis")
-                        st.info("ℹ️ **Ground truth data not available for this test set.** Results show model predictions without validation against known true positives.")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("#### 🧪 Test Dataset")
-                            st.markdown("**Model predictions on new data**")
-                            st.markdown(f"**Predictions Made:** {int(best_result['Additional_Peptides']):,} additional peptides")
-                            
-                        with col2:
-                            st.markdown("#### 🎯 Model Performance")
-                            st.markdown("**Inference Results**")
-                            st.markdown(f"**Confidence Threshold:** {best_result.get('Threshold', 'N/A')}")
-                            st.warning("⚠️ FDR cannot be calculated without ground truth data")
+                                st.success("💡 Our ML model identifies which additional candidates are real peptides vs false positives")
+                    # In discovery mode, skip the detailed analysis section entirely
                     
                     st.markdown("---")
                 
@@ -3579,14 +3666,34 @@ def show_inference_interface():
     def get_available_methods_cached(dataset_filter):
         return get_configured_methods(dataset_filter)
     
-    # Get available methods based on dataset filter
-    available_methods_filtered = get_available_methods_cached(dataset_filter)
+    # Get ALL available methods for inference (including those without ground truth)
+    def get_all_available_methods_cached(dataset_filter):
+        # For inference mode, we want ALL methods regardless of ground truth availability
+        files_info = discover_available_files()
+        all_methods = set()
+        
+        # Collect methods from all data types (baseline, training, testing)
+        for category in ['baseline', 'training', 'testing']:
+            if category in files_info:
+                for file_info in files_info[category]:
+                    if 'method' in file_info:
+                        all_methods.add(file_info['method'])
+        
+        # Filter by dataset if specified
+        if dataset_filter != 'All':
+            filtered_methods = [method for method in all_methods if dataset_filter in method]
+            return sorted(filtered_methods)
+        
+        return sorted(all_methods)
+    
+    # Get available methods (including those without ground truth for discovery mode)
+    available_methods_filtered = get_all_available_methods_cached(dataset_filter)
     
     # Data selection (clean layout)
     test_method = st.sidebar.selectbox(
         "🧪 Select test method:",
         available_methods_filtered,
-        help="Choose the method to apply the model to"
+        help="Choose the method to apply the model to (works with or without ground truth)"
     )
     
     # Display the full selected method name
@@ -3988,6 +4095,11 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                 test_data, y_scores, y_test, aggregation_method='max'
             )
             
+            # Check if we're in discovery mode (no ground truth available)
+            is_discovery_mode = len(ground_truth_peptides) == 0
+            
+        
+            
             # Run threshold optimization for each target FDR
             results = []
             for target_fdr in target_fdr_levels:
@@ -3997,35 +4109,54 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     threshold = original_thresholds[target_fdr]
                     # Using original training threshold
                 else:
-                    # Use threshold optimization with aggregated data
-                    threshold, tp, actual_fdr = api._find_optimal_threshold(
-                        peptide_labels, peptide_predictions, target_fdr
-                    )
+                    if is_discovery_mode:
+                        # In discovery mode, use pre-trained thresholds or reasonable defaults
+                        threshold = original_thresholds.get(target_fdr, 0.5)
+                    else:
+                        # Use threshold optimization with aggregated data
+                        threshold, tp, actual_fdr = api._find_optimal_threshold(
+                            peptide_labels, peptide_predictions, target_fdr
+                        )
                 
-                # Calculate metrics only if threshold is valid
+                # Calculate metrics
                 if threshold is not None:
                     y_pred = (peptide_predictions >= threshold).astype(int)
-                    tp = np.sum((y_pred == 1) & (peptide_labels == 1))
-                    fp = np.sum((y_pred == 1) & (peptide_labels == 0))
-                    actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
+                    discovered_peptides = np.sum(y_pred == 1)
                     
-                    # Calculate metrics with threshold
+                    if is_discovery_mode:
+                        # Discovery mode: do not report FP/Actual FDR; show discovered peptides only
+                        tp = discovered_peptides
+                        fp = 0
+                        actual_fdr = 0
+                    else:
+                        # Validation mode metrics - normal FDR calculation
+                        tp = np.sum((y_pred == 1) & (peptide_labels == 1))
+                        fp = np.sum((y_pred == 1) & (peptide_labels == 0))
+                        actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
                 else:
                     # No valid threshold found for this FDR level
                     y_pred = np.zeros_like(peptide_predictions, dtype=int)
                     tp = 0
                     fp = 0
+                    actual_fdr = 0
+                    discovered_peptides = 0
                 
                 # Calculate recovery percentage and increase percentage
-                # Total validated candidates = peptides in ground truth (true positives in peptide_labels)
-                total_validated = np.sum(peptide_labels == 1)
-                recovery_pct = (tp / total_validated * 100) if total_validated > 0 else 0
-                increase_pct = (tp / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
+                if is_discovery_mode:
+                    # Discovery mode: calculate increase vs baseline
+                    total_validated = len(baseline_peptides)  # Use baseline as reference
+                    recovery_pct = 0  # Can't calculate recovery without ground truth
+                    increase_pct = (discovered_peptides / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
+                else:
+                    # Validation mode: normal calculations
+                    total_validated = np.sum(peptide_labels == 1)
+                    recovery_pct = (tp / total_validated * 100) if total_validated > 0 else 0
+                    increase_pct = (tp / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
                 
                 results.append({
                     'Target_FDR': target_fdr,
                     'Threshold': threshold if threshold is not None else 0.5,
-                    'Additional_Peptides': tp,
+                    'Additional_Peptides': discovered_peptides if is_discovery_mode else tp,
                     'False_Positives': fp,
                     'Actual_FDR': actual_fdr,
                     'Precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
@@ -4517,17 +4648,46 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
         else:
             best_result = results_df.iloc[0]  # Fallback to first result
         
-        # Key performance metrics (same as training mode)
-        st.markdown("### 🏆 Best Performance Achieved")
+        # Detect discovery mode
+        is_discovery_mode = results_df['Actual_FDR'].max() == 0 and results_df['Additional_Peptides'].max() > 0
+        
+        # Key performance metrics - adapted for discovery mode
+        if is_discovery_mode:
+            st.markdown("### 🔬 Discovery Results Summary")
+        else:
+            st.markdown("### 🏆 Best Performance Achieved")
+            
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
+            if is_discovery_mode:
+                # Get baseline peptides from summary section
+                baseline_count = formatted_results.get('summary', {}).get('baseline_peptides', formatted_results.get('baseline_peptides', 0))
+                st.metric("Baseline Peptides", f"{baseline_count:,}" if baseline_count > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
+            else:
+                st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
         with col2:
-            st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
+            if is_discovery_mode:
+                # Show discovered peptides at 5% FDR as an example
+                fdr_5_result = None
+                for result in results_df.itertuples():
+                    if result.Target_FDR == 5.0:
+                        fdr_5_result = result
+                        break
+                
+                if fdr_5_result:
+                    peptide_count = int(fdr_5_result.Additional_Peptides)
+                    st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
+                else:
+                    st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
+            else:
+                st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
         with col3:
             st.metric("Method Tested", test_method, delta=None, help="MS method used for inference testing")
         with col4:
-            st.metric("Test FDR Level", f"{test_fdr}%", delta=None, help="FDR level of test data used")
+            if is_discovery_mode:
+                st.metric("Analysis Type", "Discovery", delta=None, help="Discovery mode - no ground truth validation")
+            else:
+                st.metric("Test FDR Level", f"{test_fdr}%", delta=None, help="FDR level of test data used")
         
         # Check if we have ground truth data available for this test set
         has_ground_truth = False
@@ -4628,24 +4788,8 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
                             st.markdown(f"**Validated candidates (in ground truth):** {validated_candidates:,} ({validation_rate:.1f}% of candidates)")
                             st.info(f"Only {validated_candidates:,} out of {additional_candidates:,} additional candidates are actually present in the ground truth")
                     
-                    st.success("💡 Our ML model identifies which validated candidates are real peptides vs false positives")
-        else:
-            # Show a simplified section when no ground truth is available
-            st.markdown("### 🔍 Test Data Analysis")
-            st.info("ℹ️ **Ground truth data not available for this test set.** Results show model predictions without validation against known true positives.")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("#### 🧪 Test Dataset")
-                st.markdown(f"**Method:** {test_method}")
-                st.markdown(f"**FDR Level:** {test_fdr}%")
-                st.markdown(f"**Predictions Made:** {int(best_result['Additional_Peptides']):,} additional peptides")
-                
-            with col2:
-                st.markdown("#### 🎯 Model Performance")
-                st.markdown(f"**Model:** {selected_model.get('model_name', 'Unknown')}")
-                st.markdown(f"**Confidence Threshold:** {best_result.get('Threshold', 'N/A')}")
-                st.warning("⚠️ FDR cannot be calculated without ground truth data")
+                    st.success("💡 Our ML model identifies which additional candidates are real peptides vs false positives")
+        # In discovery mode, skip the detailed analysis section entirely
         
         st.markdown("---")
         
@@ -4701,45 +4845,78 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
 def display_inference_table_only(df):
     """Display just the inference results table without feature importance."""
     
+    # Check if we're in discovery mode (all Actual_FDR values are 0)
+    is_discovery_mode = df['Actual_FDR'].max() == 0 and df['Additional_Peptides'].max() > 0
+    
     # Display results table with proper column explanations
     st.markdown("### 📋 Detailed Results Table")
     
-    # Fix column explanations to match actual table columns (left to right)
-    st.info("""
-    **📊 Column Explanations (left to right):**
-    • **Target FDR**: Desired false discovery rate threshold
-    • **Threshold**: Model confidence threshold used for predictions
-    • **Additional Unique Peptides**: Total additional peptides identified (includes both true and false positives)
-    • **False Positives**: Model predictions not validated by ground truth
-    • **Actual FDR**: Measured false discovery rate of additional peptides
-    • **Precision**: Model precision (TP/(TP+FP))
-    • **Recovery %**: Percentage of validated candidates successfully recovered
-    • **Increase %**: Improvement over baseline peptide count
-    """)
+    if is_discovery_mode:
+        # Discovery mode explanations
+        st.info("""
+        **🔬 Discovery Mode - Column Explanations (left to right):**
+        • **Target FDR**: FDR threshold used for discovery (from training)
+        • **Threshold**: Model confidence threshold used for predictions
+        • **Discovered Peptides**: Total peptides discovered at this FDR level
+        • **Increase %**: Improvement over baseline peptide count
+        """)
+    else:
+        # Validation mode explanations
+        st.info("""
+        **📊 Validation Mode - Column Explanations (left to right):**
+        • **Target FDR**: Desired false discovery rate threshold
+        • **Threshold**: Model confidence threshold used for predictions
+        • **Additional Unique Peptides**: Total additional peptides identified (includes both true and false positives)
+        • **False Positives**: Model predictions not validated by ground truth
+        • **Actual FDR**: Measured false discovery rate of additional peptides
+        • **Precision**: Model precision (TP/(TP+FP))
+        • **Recovery %**: Percentage of validated candidates successfully recovered
+        • **Increase %**: Improvement over baseline peptide count
+        """)
     
     # Format the dataframe for display
     display_df = df.copy()
     
     # Remove internal columns from display 
     columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates']
+    
+    if is_discovery_mode:
+        # In discovery mode, remove columns that don't make sense without ground truth
+        discovery_columns_to_remove = ['False_Positives', 'Actual_FDR', 'Precision', 'Recovery_Pct']
+        columns_to_remove.extend(discovery_columns_to_remove)
+        
+        # Rename columns for discovery context
+        if 'Additional_Peptides' in display_df.columns:
+            display_df = display_df.rename(columns={'Additional_Peptides': 'Discovered_Peptides'})
+    
     for col in columns_to_remove:
         if col in display_df.columns:
             display_df = display_df.drop(col, axis=1)
     
     # Format percentage columns
-    display_df['Target_FDR'] = display_df['Target_FDR'].map('{:.1f}%'.format)
-    display_df['Actual_FDR'] = display_df['Actual_FDR'].map('{:.1f}%'.format)
-    display_df['Recovery_Pct'] = display_df['Recovery_Pct'].map('{:.1f}%'.format)
-    display_df['Increase_Pct'] = display_df['Increase_Pct'].map('{:.1f}%'.format)
+    if is_discovery_mode:
+        display_df['Target_FDR'] = display_df['Target_FDR'].map('{:.1f}%'.format)
+        display_df['Increase_Pct'] = display_df['Increase_Pct'].map('{:.1f}%'.format)
+    else:
+        display_df['Target_FDR'] = display_df['Target_FDR'].map('{:.1f}%'.format)
+        display_df['Actual_FDR'] = display_df['Actual_FDR'].map('{:.1f}%'.format)
+        display_df['Recovery_Pct'] = display_df['Recovery_Pct'].map('{:.1f}%'.format)
+        display_df['Increase_Pct'] = display_df['Increase_Pct'].map('{:.1f}%'.format)
     
     # Format MCC if it exists
     if 'MCC' in display_df.columns:
         display_df['MCC'] = display_df['MCC'].map('{:.3f}'.format)
     
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        column_config={
+    # Configure columns based on mode
+    if is_discovery_mode:
+        column_config = {
+            "Target_FDR": st.column_config.TextColumn("Target FDR", help="FDR threshold used for discovery (from training)"),
+            "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
+            "Discovered_Peptides": st.column_config.NumberColumn("Discovered Peptides", help="Total peptides discovered at this FDR level"),
+            "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline")
+        }
+    else:
+        column_config = {
             "Target_FDR": st.column_config.TextColumn("Target FDR", help="Desired false discovery rate"),
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
             "Additional_Peptides": st.column_config.NumberColumn("Additional Unique Peptides", help="Total additional peptides identified (includes both true and false positives)"),
@@ -4749,6 +4926,11 @@ def display_inference_table_only(df):
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline"),
             "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient (-1 to +1, higher is better)")
         }
+    
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        column_config=column_config
     )
 
 def display_inference_results_with_tabs():
@@ -4827,61 +5009,94 @@ def load_baseline_peptides_inference(test_method=None):
         return set()
 
 def get_matching_ground_truth_method(test_method):
-    """Get the appropriate ground truth method for a given test method."""
-    # Use automatic discovery for all datasets to maintain universal compatibility
-    # The calling function will find the best ground truth match based on available data
-    return None
+    """Get the appropriate ground truth mapping info for a given test method from dataset configuration.
 
-def load_ground_truth_peptides_inference(test_method=None):
-    """Load ground truth peptides for inference, with automatic matching for methods."""
+    Returns a dict { 'dataset': <dataset_name>, 'method': <mapped_gt_method> } or None.
+    """
     try:
-        # Use the same data discovery as training
-        files_info = discover_available_files()
-        ground_truth_files = files_info.get('ground_truth', [])
+        # Find which dataset this method belongs to by checking all dataset configs
+        data_dir = os.path.join(os.path.dirname(__file__), "data")
         
-        if not ground_truth_files:
-            return set()
-        
-        ground_truth_peptides = set()
-        
-        # If a specific test method is provided, try to match to appropriate ground truth
-        if test_method:
-            target_gt_method = get_matching_ground_truth_method(test_method)
+        for dataset_dir in os.listdir(data_dir):
+            dataset_path = os.path.join(data_dir, dataset_dir)
+            if not os.path.isdir(dataset_path):
+                continue
             
-            if target_gt_method:
-                # Look for the specific matching ground truth method
-                matching_files = [f for f in ground_truth_files if f['method'] == target_gt_method]
-                if matching_files:
-                    st.success(f"🎯 Using matched ground truth: {target_gt_method} for test method {test_method}")
-                    ground_truth_files = matching_files
-                else:
-                    st.error(f"❌ Could not find matching ground truth {target_gt_method} for {test_method}")
-                    st.info("Available ground truth methods:")
-                    for gt_file in ground_truth_files:
-                        st.info(f"  - {gt_file['method']}: {gt_file['filename']}")
-                    return set()
-            else:
-                # Generic matching: find ground truth from same dataset
-                test_dataset = test_method.split('_')[0] if '_' in test_method else None
-                if test_dataset:
-                    dataset_gt_files = [f for f in ground_truth_files if f.get('dataset') == test_dataset]
-                    if dataset_gt_files:
-                        st.success(f"🎯 Using {test_dataset} ground truth files for test method {test_method}")
-                        ground_truth_files = dataset_gt_files
-                    else:
-                        st.warning(f"⚠️ No ground truth found for dataset {test_dataset}, using all available ground truth files")
-                else:
-                    st.info("ℹ️ Using all available ground truth files for inference")
-        
-        for file_info in ground_truth_files:
+            config_path = os.path.join(dataset_path, "dataset_info.json")
+            if not os.path.exists(config_path):
+                continue
+            
             try:
-                peptides = load_peptide_sequences(file_info['path'])
-                ground_truth_peptides.update(peptides)
-            except Exception as e:
-                st.warning(f"Could not load ground truth file {file_info['filename']}: {str(e)}")
+                import json
+                with open(config_path, 'r') as f:
+                    dataset_config = json.load(f)
+                
+                # Check if this test method is configured in this dataset
+                gt_mapping = dataset_config.get('ground_truth_mapping', {})
+                direct_rules = gt_mapping.get('_direct_rules', {})
+                
+                if test_method in direct_rules:
+                    return { 'dataset': dataset_dir, 'method': direct_rules[test_method] }
+                
+            except Exception:
                 continue
         
-        return ground_truth_peptides
+        return None
+    except Exception:
+        return None
+
+def load_ground_truth_peptides_inference(test_method=None):
+    """Load ground truth peptides for inference, strictly respecting dataset configuration.
+
+    If the configured ground truth file for the given test method is missing, proceed in discovery mode.
+    """
+    try:
+        ground_truth_peptides = set()
+
+        # Only attempt to load ground truth when an explicit mapping exists
+        if test_method:
+            mapping_info = get_matching_ground_truth_method(test_method)
+
+            if mapping_info:
+                # Build expected path inside the configured dataset folder
+                data_dir = os.path.join(os.path.dirname(__file__), "data")
+                expected_dir = os.path.join(
+                    data_dir,
+                    mapping_info['dataset'],
+                    "long_gradient",
+                    "FDR_1",
+                )
+
+                # Match any file that starts with the mapped method and has an FDR1 parquet suffix
+                import glob as _glob
+                expected_pattern = os.path.join(expected_dir, f"{mapping_info['method']}_FDR*.parquet")
+                candidate_paths = sorted(_glob.glob(expected_pattern))
+
+                if not candidate_paths:
+                    st.info(f"ℹ️ No matching ground truth found for {test_method} - proceeding in discovery mode")
+                    return set()
+
+                st.success(
+                    f"🎯 Using matched ground truth: {mapping_info['method']} (dataset {mapping_info['dataset']}) for test method {test_method}"
+                )
+
+                for file_path in candidate_paths:
+                    try:
+                        peptides = load_peptide_sequences(file_path)
+                        ground_truth_peptides.update(peptides)
+                    except Exception as e:
+                        st.warning(f"Could not load ground truth file {os.path.basename(file_path)}: {str(e)}")
+                        continue
+
+                return ground_truth_peptides
+            else:
+                st.info(f"ℹ️ No configured ground truth mapping found for {test_method} - proceeding in discovery mode")
+                return set()
+
+        # If no test_method provided, do not attempt generic fallback; discovery mode
+        st.info("ℹ️ No test method provided - proceeding in discovery mode")
+        return set()
+
     except Exception as e:
         st.error(f"Error loading ground truth peptides: {str(e)}")
         return set()

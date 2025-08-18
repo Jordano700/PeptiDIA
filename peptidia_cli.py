@@ -22,7 +22,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
     from peptide_validator_api import PeptideValidatorAPI
-    from dataset_utils import discover_available_files_by_dataset, get_configured_methods
+    from dataset_utils import discover_available_files_by_dataset, get_configured_methods, get_all_available_methods, validate_ground_truth_files, get_files_for_any_method
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Please ensure you're running this script from the PeptiDIA directory")
@@ -206,6 +206,37 @@ class PeptiDIACLI:
             
         print(f"{Colors.CYAN}{'-'*80}{Colors.ENDC}")
         return configured_methods
+        
+    def display_all_available_methods(self, dataset: str) -> List[str]:
+        """Display ALL available methods for a dataset, including discovery mode."""
+        # Get all available methods for this dataset
+        all_methods = get_all_available_methods(dataset_filter=dataset, include_discovery_mode=True)
+        
+        if not all_methods:
+            print(f"{Colors.WARNING}⚠️  No methods found for {dataset}{Colors.ENDC}")
+            return []
+        
+        print(f"\n{Colors.BOLD}📋 Available Methods for {dataset}:{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*80}")
+        
+        for i, method in enumerate(all_methods, 1):
+            # Check if method has ground truth
+            has_ground_truth = validate_ground_truth_files(method)
+            
+            # Show actual method name, truncate if too long
+            display_method = method[:60] + "..." if len(method) > 60 else method
+            
+            if has_ground_truth:
+                status = f"{Colors.GREEN}[Validation]{Colors.ENDC}"
+            else:
+                status = f"{Colors.BLUE}[Discovery]{Colors.ENDC}"
+            
+            print(f"{Colors.GREEN}{i:>3}. {Colors.ENDC}{display_method} {status}")
+            
+        print(f"{Colors.CYAN}{'-'*80}{Colors.ENDC}")
+        print(f"{Colors.CYAN}💡 Validation mode: Uses ground truth for performance metrics{Colors.ENDC}")
+        print(f"{Colors.CYAN}💡 Discovery mode: No ground truth - estimates FDR thresholds{Colors.ENDC}")
+        return all_methods
     
     def select_training_methods(self, dataset: str) -> List[str]:
         """Let user select training methods."""
@@ -1474,23 +1505,16 @@ class PeptiDIACLI:
             print(f"\n{Colors.BLUE}↩️  Returning to model selection...{Colors.ENDC}")
             return None
         
-        # Step 2: Display configured methods for the selected dataset
-        available_methods = self.display_configured_methods(dataset)
+        # Step 2: Display ALL available methods for the selected dataset (including discovery mode)
+        available_methods = self.display_all_available_methods(dataset)
         if not available_methods:
             return None
         
-        # Step 3: Select test method (use configured methods as-is, whether individual or groups)
+        # Step 3: Select test method (use all methods, whether they have ground truth or not)
         print(f"\n{Colors.BOLD}🧪 Test Method Selection{Colors.ENDC}")
-        print(f"{Colors.BLUE}Select ONE test method/group for inference{Colors.ENDC}")
-        
-        # Check if methods are groups or individual
-        has_groups = any('Group' in method or len([m for m in available_methods if method.split('_')[0] in m]) > 1 
-                        for method in available_methods)
-        
-        if has_groups:
-            print(f"{Colors.CYAN}💡 This dataset uses pre-configured groups (including triplicates){Colors.ENDC}")
-        else:
-            print(f"{Colors.CYAN}💡 This dataset uses individual methods{Colors.ENDC}")
+        print(f"{Colors.BLUE}Select ONE test method for inference{Colors.ENDC}")
+        print(f"{Colors.CYAN}💡 Methods with ground truth will run in validation mode{Colors.ENDC}")
+        print(f"{Colors.CYAN}💡 Methods without ground truth will run in discovery mode{Colors.ENDC}")
         
         while True:
             try:
@@ -1608,9 +1632,8 @@ class PeptiDIACLI:
             # Load test data
             print(f"{Colors.BLUE}📊 Loading test data: {test_config['test_method']}{Colors.ENDC}")
             
-            # Get test data files
-            from dataset_utils import get_files_for_configured_method
-            test_files = get_files_for_configured_method(test_config['test_method'], test_config['test_fdr'])
+            # Get test data files (supports both configured and non-configured methods)
+            test_files = get_files_for_any_method(test_config['test_method'], test_config['test_fdr'])
             
             if not test_files:
                 print(f"{Colors.FAIL}❌ No test data files found for {test_config['test_method']} at {test_config['test_fdr']}% FDR{Colors.ENDC}")
@@ -1859,8 +1882,19 @@ class PeptiDIACLI:
             
         print()
         
-        # Check if we have ground truth results
-        has_ground_truth = results and 'Actual_FDR' in results[0] and results[0]['Actual_FDR'] is not None
+        # Check if we have ground truth results (same logic as Streamlit)
+        # Discovery mode when all Actual_FDR = 0 (or None) AND we have additional peptides
+        is_discovery_mode = False
+        if results:
+            # Handle None values by converting to 0
+            actual_fdr_values = [result.get('Actual_FDR', 0) or 0 for result in results]
+            additional_values = [result.get('Additional_Peptides', 0) or 0 for result in results]
+            
+            max_actual_fdr = max(actual_fdr_values) if actual_fdr_values else 0
+            max_additional = max(additional_values) if additional_values else 0
+            is_discovery_mode = max_actual_fdr == 0 and max_additional > 0
+        
+        has_ground_truth = not is_discovery_mode
         
         # Results table - match training format exactly
         if has_ground_truth:
@@ -1872,43 +1906,45 @@ class PeptiDIACLI:
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
             
             for result in results:
-                actual_fdr = f"{result.get('Actual_FDR', 0):.1f}"
-                recovery = f"{result.get('Recovery_Pct', 0):.1f}"
-                increase = f"{result.get('Increase_Pct', 0):.1f}"
-                false_pos = result.get('False_Positives', 0)
-                mcc = f"{result.get('MCC', 0):.3f}"
+                actual_fdr = f"{result.get('Actual_FDR', 0) or 0:.1f}"
+                recovery = f"{result.get('Recovery_Pct', 0) or 0:.1f}"
+                increase = f"{result.get('Increase_Pct', 0) or 0:.1f}"
+                false_pos = result.get('False_Positives', 0) or 0
+                mcc = f"{result.get('MCC', 0) or 0:.3f}"
                 
                 print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} "
                       f"{actual_fdr:<12} {recovery:<12} {increase:<12} {false_pos:<10,d} {mcc:<10}")
             
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
         else:
-            # Simplified table without ground truth (confidence-based)
-            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Confidence Distribution':<35} {'Score Range':<20}"
+            # Discovery mode - simplified table to match Streamlit
+            print(f"{Colors.BOLD}Target FDR Optimization Results (Discovery Mode):{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*60}{Colors.ENDC}")
+            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Increase %':<12}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
-            subheader = f"{'(%)':<12} {'Score':<12} {'Peptides':<12} {'High(>80%) Med(50-80%) Low(<50%)':<35} {'Min - Max':<20}"
-            print(f"{Colors.CYAN}{subheader}{Colors.ENDC}")
-            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*60}{Colors.ENDC}")
             
             for result in results:
-                if 'High_Confidence' in result:
-                    confidence_dist = f"{result['High_Confidence']:,}     {result['Medium_Confidence']:,}      {result['Low_Confidence']:,}"
-                    score_range = result.get('Prediction_Score_Range', 'N/A')
-                    print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} "
-                          f"{confidence_dist:<35} {score_range:<20}")
+                # Calculate increase percentage ourselves if not provided (discovery mode)
+                increase_pct = result.get('Increase_Pct')
+                if increase_pct is None and baseline_count > 0:
+                    # Calculate: (Additional_Peptides / Baseline_Peptides) * 100
+                    additional_peptides = result.get('Additional_Peptides', 0)
+                    increase_pct = (additional_peptides / baseline_count) * 100
                 else:
-                    # Ground truth results without confidence breakdown
-                    print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d}")
+                    increase_pct = increase_pct or 0
+                
+                increase = f"{increase_pct:.1f}"
+                print(f"{result['Target_FDR']:<12.1f} {result['Threshold']:<12.4f} {result['Additional_Peptides']:<12,d} {increase:<12}")
             
-            print(f"{Colors.CYAN}{'-'*120}{Colors.ENDC}")
+            print(f"{Colors.CYAN}{'-'*60}{Colors.ENDC}")
         
         
         # Update note based on ground truth availability
         if has_ground_truth:
             print(f"\n{Colors.GREEN}💡 Note: Results calculated with ground truth validation for accurate statistics{Colors.ENDC}")
         else:
-            print(f"\n{Colors.BLUE}💡 Note: These are predictions on new data without ground truth validation{Colors.ENDC}")
+            print(f"\n{Colors.BLUE}💡 Note: Discovery mode - No ground truth available. Results show peptide discovery at target FDR levels{Colors.ENDC}")
     
     def _save_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict):
         """Save inference results to file."""

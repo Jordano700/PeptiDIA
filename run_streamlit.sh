@@ -57,6 +57,7 @@ streamlit run streamlit_app.py \
     --server.headless true \
     --server.enableCORS false \
     --server.enableXsrfProtection false \
+    --logger.level error \
     --theme.primaryColor "#2E86AB" \
     --theme.backgroundColor "#FFFFFF" \
     --theme.secondaryBackgroundColor "#F0F2F6" \

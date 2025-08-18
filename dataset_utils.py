@@ -206,6 +206,70 @@ def get_configured_methods(dataset_filter=None):
     return validated_methods
 
 
+def get_all_available_methods(dataset_filter=None, include_discovery_mode=True):
+    """Get ALL available test methods, including those without ground truth for discovery mode.
+    
+    Args:
+        dataset_filter: If provided, only return methods from this dataset
+        include_discovery_mode: If True, include methods without ground truth
+    
+    Returns:
+        List of all available test method names
+    """
+    files_info_by_dataset = discover_available_files_by_dataset()
+    all_methods = []
+    
+    for dataset_name, dataset_info in files_info_by_dataset.items():
+        # Apply dataset filter if specified
+        if dataset_filter and dataset_filter != 'All' and dataset_name != dataset_filter:
+            continue
+            
+        # Get all test methods from baseline data (this includes ALL methods, not just configured ones)
+        if 'baseline' in dataset_info:
+            baseline_methods = list(dataset_info['baseline'].keys())
+            all_methods.extend(baseline_methods)
+    
+    # Remove duplicates and sort
+    unique_methods = sorted(list(set(all_methods)))
+    
+    if not include_discovery_mode:
+        # Filter to only methods with valid ground truth
+        validated_methods = []
+        for method in unique_methods:
+            if validate_ground_truth_files(method):
+                validated_methods.append(method)
+        return validated_methods
+    
+    return unique_methods
+
+
+def get_files_for_any_method(method_name: str, fdr_level: int):
+    """Get file paths for any method (configured or not) for discovery/validation mode."""
+    files_info_by_dataset = discover_available_files_by_dataset()
+    
+    # First try the configured method approach
+    configured_files = get_files_for_configured_method(method_name, fdr_level)
+    if configured_files:
+        return configured_files
+    
+    # If not configured, look for individual files in baseline/training data
+    for dataset_name, dataset_info in files_info_by_dataset.items():
+        # Check training data
+        fdr_str = str(fdr_level)
+        if 'training' in dataset_info and fdr_str in dataset_info['training']:
+            if method_name in dataset_info['training'][fdr_str]:
+                file_info = dataset_info['training'][fdr_str][method_name][0]
+                return [file_info['full_path']]
+        
+        # Check baseline data (for discovery mode)
+        if 'baseline' in dataset_info:
+            if method_name in dataset_info['baseline']:
+                file_info = dataset_info['baseline'][method_name][0]
+                return [file_info['full_path']]
+    
+    return []
+
+
 def get_files_for_configured_method(method_name: str, fdr_level: int):
     """Get file paths for a configured method (handles both individual files and groups)."""
     files_info_by_dataset = discover_available_files_by_dataset()
