@@ -33,7 +33,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-Note: If `python3.12` is not found, install Python 3.12.2 first (e.g., via pyenv, Homebrew, winget, or your OS package manager).
+Note: If `python3.12` is not found, install Python 3.12.2 first (e.g., via pyenv, Homebrew, winget, or your OS package manager). For OS-specific steps (including Windows PowerShell), see `PEPTIDIA_GUIDE.md`.
 ```
 
 **That's it!** The installer:
