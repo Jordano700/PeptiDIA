@@ -72,7 +72,7 @@ def install_dependencies(python_exe):
         
         # Install exact versions
         subprocess.check_call([
-            str(python_exe), "-m", "pip", "install", "-r", "requirements-locked.txt"
+            str(python_exe), "-m", "pip", "install", "-r", "requirements.txt"
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         print("✅ All dependencies installed successfully!")
