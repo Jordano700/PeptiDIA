@@ -1,13 +1,21 @@
 # Dataset files - users will add their own datasets
-data/
-*.parquet
+# Keep folder structure but ignore actual data files
+data/**/*.parquet
+data/**/*.csv
+data/**/*.tsv
+data/**/*.xlsx
+# Allow .gitkeep files to preserve folder structure
+!data/**/.gitkeep
 
 # Project development files
 CLAUDE.md
 
 # Results, models, and run history - keep local only
-results/
-history/
+# Keep folder structure but ignore result files
+results/**/*
+!results/.gitkeep
+history/**/*
+!history/.gitkeep
 run_history/
 saved_models/
 fdr_results/
@@ -41,6 +49,7 @@ venv/
 ENV/
 env/
 .venv/
+peptidia_env/
 
 # IDE files
 .vscode/
