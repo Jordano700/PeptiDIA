@@ -21,9 +21,6 @@ from io import StringIO
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Also ensure we're running from the project root directory
-os.chdir(project_root)
-
 # Add the src directory to path as well
 src_path = project_root / 'src'
 if src_path.exists():

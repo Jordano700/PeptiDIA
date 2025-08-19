@@ -429,7 +429,10 @@ class PeptideValidatorAPI:
         import json
         import os
         
-        config_path = os.path.join(os.path.dirname(__file__), 'data', dataset_name, 'dataset_info.json')
+        # Point to project root data directory, not module-relative
+        # Go up 3 levels: core -> peptidia -> src -> project_root
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        config_path = os.path.join(project_root, 'data', dataset_name, 'dataset_info.json')
         
         if os.path.exists(config_path):
             try:

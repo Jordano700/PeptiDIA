@@ -28,7 +28,10 @@ def discover_available_files_by_dataset():
             }
         }
     """
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    # Point to project root data directory, not module-relative  
+    # Go up 3 levels: core -> peptidia -> src -> project_root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    data_dir = os.path.join(project_root, "data")
     
     datasets_info = {}
     
@@ -139,7 +142,9 @@ def get_configured_methods(dataset_filter=None):
             continue
             
         # Check if there's a saved configuration for this dataset
-        config_path = f"data/{dataset_name}/dataset_info.json"
+        # Go up 3 levels: core -> peptidia -> src -> project_root
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        config_path = os.path.join(project_root, "data", dataset_name, "dataset_info.json")
         
         if os.path.exists(config_path):
             try:
@@ -282,8 +287,10 @@ def get_files_for_configured_method(method_name: str, fdr_level: int):
             dataset_name = parts[0]
             group_term = parts[1]
             
-            # Check if there's a saved configuration for this dataset
-            config_path = f"data/{dataset_name}/dataset_info.json"
+            # Check if there's a saved configuration for this dataset  
+            # Go up 3 levels: core -> peptidia -> src -> project_root
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            config_path = os.path.join(project_root, "data", dataset_name, "dataset_info.json")
             
             if os.path.exists(config_path):
                 try:
@@ -409,7 +416,10 @@ def validate_ground_truth_files(method_name: str) -> bool:
                 return True  # Default to valid if no sample ID found
             
             # Check ground truth file
-            data_dir = os.path.join(os.path.dirname(__file__), "data")
+            # Point to project root data directory, not module-relative
+            # Go up 3 levels: core -> peptidia -> src -> project_root
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+            data_dir = os.path.join(project_root, "data")
             pattern = f'{data_dir}/{dataset_name}/long_gradient/FDR_1/*{sample_id}*FDR1.parquet'
             ground_truth_files = glob.glob(pattern)
             

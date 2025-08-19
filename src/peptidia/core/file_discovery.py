@@ -27,7 +27,10 @@ def discover_available_files():
     │   └── long_gradient/
     │       └── FDR_1/          # GROUND TRUTH files
     """
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    # Point to project root data directory, not module-relative
+    # Go up 3 levels: core -> peptidia -> src -> project_root
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    data_dir = os.path.join(project_root, "data")
     
     files_info = {
         'baseline': [],     # Short gradient FDR_1 (baseline reference)
