@@ -1,0 +1,8 @@
+name: peptidia
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.2
+  - pip
+  - pip:
+      - -r requirements.txt

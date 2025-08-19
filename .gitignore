@@ -55,6 +55,11 @@ env/
 .venv/
 peptidia_env/
 
+# Streamlit local settings
+.streamlit/*
+!.streamlit/config.toml
+.streamlit/secrets.toml
+
 # IDE files
 .vscode/
 .idea/

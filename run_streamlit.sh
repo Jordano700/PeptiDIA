@@ -3,12 +3,26 @@
 
 echo "🧬 Starting PeptiDIA Web Interface..."
 
-# Check if virtual environment exists
-if [ ! -d "peptidia_env" ]; then
-    echo "❌ Virtual environment not found!"
-    echo "💡 Please run: python install.py"
-    echo "   This will create the environment and install dependencies."
-    exit 1
+# Select Python executable: prefer local venv, else current environment (supports Conda)
+if [ -x "./peptidia_env/bin/python" ]; then
+	PYTHON="./peptidia_env/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+	PYTHON="python3"
+else
+	PYTHON="python"
+fi
+
+# Ensure dependencies are installed (use locked requirements if available)
+if ! "$PYTHON" - <<'PY' >/dev/null 2>&1
+import streamlit
+PY
+then
+	echo "❌ Streamlit not found. Installing required packages into current environment..."
+	REQ_FILE="requirements.txt"
+	if [ -f "requirements-locked.txt" ]; then
+		REQ_FILE="requirements-locked.txt"
+	fi
+	"$PYTHON" -m pip install -r "$REQ_FILE"
 fi
 
 # Check if port 8501 is already in use
@@ -23,7 +37,7 @@ if lsof -i :8501 >/dev/null 2>&1; then
     else
         echo "❌ Another application is using port 8501"
         echo "💡 You can run with a different port:"
-        echo "   ./peptidia_env/bin/python -m streamlit run streamlit_app.py --server.port 8502"
+        echo "   $PYTHON -m streamlit run streamlit_app.py --server.port 8502"
         exit 1
     fi
 fi
@@ -34,8 +48,8 @@ echo ""
 echo "💡 Press Ctrl+C to stop the server"
 echo ""
 
-# Run with virtual environment Python
-./peptidia_env/bin/python -m streamlit run streamlit_app.py \
+# Run with selected Python
+"$PYTHON" -m streamlit run streamlit_app.py \
     --server.port 8501 \
     --server.headless true \
     --server.enableCORS false \
