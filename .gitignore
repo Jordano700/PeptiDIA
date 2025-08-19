@@ -4,6 +4,10 @@ data/**/*.parquet
 data/**/*.csv
 data/**/*.tsv
 data/**/*.xlsx
+data/**/*.png
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.json
 # Allow .gitkeep files to preserve folder structure
 !data/**/.gitkeep
 
