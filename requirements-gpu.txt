@@ -1,7 +1,0 @@
-# PeptiDIA - GPU-Specific Requirements
-# For users who want to force specific CUDA versions
-# Install with: pip install -r requirements-gpu.txt
-
-# Alternative CUDA versions (if cupy-cuda11x doesn't work)
-# cupy-cuda12x>=12.0.0  # For CUDA 12.x
-# cupy-cuda10x>=10.0.0  # For CUDA 10.x

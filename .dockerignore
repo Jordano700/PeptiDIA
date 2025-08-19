@@ -1,0 +1,32 @@
+# Exclude from Docker build context
+.git
+.gitignore
+README.md
+PEPTIDIA_GUIDE.md
+
+# Large data and results directories (mounted as volumes instead)
+data/*
+results/*
+history/*
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+
+# Virtual environments  
+venv/
+env/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large dependency files (we use requirements-tested.txt instead)
+requirements-exact.txt
+environment-exact.yml

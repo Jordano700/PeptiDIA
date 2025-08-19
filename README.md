@@ -19,6 +19,18 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 ```bash
 git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
+```
+
+**Choose your setup method:**
+
+**🐳 Option A - Docker (Easiest - Works Everywhere!):**
+```bash
+docker-compose up
+```
+*Zero configuration - identical environment on Windows/Mac/Linux*
+
+**🐍 Option B - Python:**
+```bash
 pip install -r requirements.txt
 ```
 
@@ -46,9 +58,21 @@ data/
 - PeptiDIA supports target FDR analysis for: **1%, 2%, 3%, 4%, 5%, 6%, 7%, 8%, 9%, 10%, 15%, 20%, 30%, 50%**
 
 ### Step 3: Run PeptiDIA
+
+**If using Docker:**
+```bash
+# Already running from Step 1!
+```
+
+**If using Python:**
 ```bash
 ./run_streamlit.sh
 ```
+**Or universally:**
+```bash
+python -m streamlit run streamlit_app.py
+```
+
 Then open your web browser to `http://localhost:8501` 
 
 ## Interface Modes 🎛️
@@ -58,7 +82,6 @@ PeptiDIA has **3 simple modes** to guide you through the process:
 ### 1. 🔧 **Setup Mode**
 - Configure your datasets very easily
 - Set up ground truth matching
-
 
 ### 2. 🎯 **Training Mode** 
 - AI learns from your data
@@ -89,8 +112,8 @@ For advanced users, PeptiDIA also provides a command-line interface:
 
 The web interface provides all functionality with a much more intuitive experience!
 
+
 ## Need Help?
 
 - 🐛 Report issues on GitHub
 - 💡 Questions? Open an issue!
-
