@@ -71,7 +71,7 @@ def install_dependencies(python_exe):
             str(python_exe), "-m", "pip", "install", "--upgrade", "pip"
         ])
         
-        req_file = "requirements-locked.txt" if Path("requirements-locked.txt").exists() else "requirements.txt"
+        req_file = "requirements.txt"
         print(f"   Using {req_file}")
         
         subprocess.check_call([
@@ -133,7 +133,7 @@ elif command -v python3 >/dev/null 2>&1; then
 else
     PY="python"
 fi
-"$PY" -m streamlit run streamlit_app.py --server.port 8501
+"$PY" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8501
 '''
     sh_path = Path("start_peptidia.sh")
     sh_path.write_text(sh_content)
@@ -152,12 +152,12 @@ if exist "peptidia_env\\Scripts\\python.exe" (
 ) else (
   set "PY=python"
 )
-"%PY%" -m streamlit run streamlit_app.py --server.port 8501
+"%PY%" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8501
 if errorlevel 1 (
   echo.
   echo ERROR: PeptiDIA failed to start
   echo TIP: Check that port 8501 is available
-  echo    Or run: "%PY%" -m streamlit run streamlit_app.py --server.port 8502
+  echo    Or run: "%PY%" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
   pause
 )
 '''

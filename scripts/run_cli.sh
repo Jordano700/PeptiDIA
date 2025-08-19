@@ -18,12 +18,8 @@ import pandas
 PY
 then
 	echo "❌ Dependencies not found. Installing required packages into current environment..."
-	REQ_FILE="requirements.txt"
-	if [ -f "requirements-locked.txt" ]; then
-		REQ_FILE="requirements-locked.txt"
-	fi
-	"$PYTHON" -m pip install -r "$REQ_FILE"
+	"$PYTHON" -m pip install -r "requirements.txt"
 fi
 
 # Run CLI
-"$PYTHON" peptidia_cli.py
+"$PYTHON" src/peptidia/cli/peptidia_cli.py

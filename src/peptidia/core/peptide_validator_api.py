@@ -39,8 +39,8 @@ import seaborn as sns
 import shap
 import json
 from typing import List, Dict, Optional, Callable, Tuple
-from file_discovery import discover_available_files, get_files_for_method
-from dataset_utils import get_files_for_configured_method, discover_available_files_by_dataset
+from .file_discovery import discover_available_files, get_files_for_method
+from .dataset_utils import get_files_for_configured_method, discover_available_files_by_dataset
 
 warnings.filterwarnings('ignore')
 
