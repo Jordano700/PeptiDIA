@@ -143,12 +143,12 @@ fi
         pass
 
     # Windows batch launcher
-    bat_content = '''@echo off
+    bat_content = r'''@echo off
 title PeptiDIA
 echo Starting PeptiDIA...
 cd /d "%~dp0"
-if exist "peptidia_env\Scripts\python.exe" (
-  set "PY=peptidia_env\Scripts\python.exe"
+if exist "peptidia_env\\Scripts\\python.exe" (
+  set "PY=peptidia_env\\Scripts\\python.exe"
 ) else (
   set "PY=python"
 )
