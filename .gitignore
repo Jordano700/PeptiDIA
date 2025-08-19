@@ -79,3 +79,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+# GitHub workflows and settings
+.github/
+
+# Python version files
+.python-version
+runtime.txt
