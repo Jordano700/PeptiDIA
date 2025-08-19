@@ -55,7 +55,6 @@ data/
 - Data must be from **DIA-NN analysis** with FDR filtering set at these exact levels
 - Short gradient needs: **1%, 20%, and 50% FDR** results
 - Long gradient needs: **1% FDR** results only
-- PeptiDIA supports target FDR analysis for: **1%, 2%, 3%, 4%, 5%, 6%, 7%, 8%, 9%, 10%, 15%, 20%, 30%, 50%**
 
 ### Step 3: Run PeptiDIA
 
