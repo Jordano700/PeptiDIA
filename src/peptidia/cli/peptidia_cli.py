@@ -17,12 +17,21 @@ from typing import Dict, List, Tuple, Optional
 import contextlib
 from io import StringIO
 
-# Add current directory to path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Also ensure we're running from the project root directory
+os.chdir(project_root)
+
+# Add the src directory to path as well
+src_path = project_root / 'src'
+if src_path.exists():
+    sys.path.insert(0, str(src_path))
 
 try:
-    from peptide_validator_api import PeptideValidatorAPI
-    from dataset_utils import discover_available_files_by_dataset, get_configured_methods, get_all_available_methods, validate_ground_truth_files, get_files_for_any_method
+    from peptidia.core.peptide_validator_api import PeptideValidatorAPI
+    from peptidia.core.dataset_utils import discover_available_files_by_dataset, get_configured_methods, get_all_available_methods, validate_ground_truth_files, get_files_for_any_method
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Please ensure you're running this script from the PeptiDIA directory")

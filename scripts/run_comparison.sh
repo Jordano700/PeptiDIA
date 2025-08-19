@@ -11,5 +11,14 @@ if [ ! -d "peptidia_env" ]; then
     exit 1
 fi
 
-# Use Python from virtual environment
-./peptidia_env/bin/python diann_comparison.py
+# Select Python executable: prefer local venv, else current environment
+if [ -x "./peptidia_env/bin/python" ]; then
+	PYTHON="./peptidia_env/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+	PYTHON="python3"
+else
+	PYTHON="python"
+fi
+
+# Use selected Python
+"$PYTHON" src/peptidia/analysis/diann_comparison.py

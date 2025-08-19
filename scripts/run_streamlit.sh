@@ -18,11 +18,7 @@ import streamlit
 PY
 then
 	echo "❌ Streamlit not found. Installing required packages into current environment..."
-	REQ_FILE="requirements.txt"
-	if [ -f "requirements-locked.txt" ]; then
-		REQ_FILE="requirements-locked.txt"
-	fi
-	"$PYTHON" -m pip install -r "$REQ_FILE"
+	"$PYTHON" -m pip install -r "requirements.txt"
 fi
 
 # Check if port 8501 is already in use
@@ -37,7 +33,7 @@ if lsof -i :8501 >/dev/null 2>&1; then
     else
         echo "❌ Another application is using port 8501"
         echo "💡 You can run with a different port:"
-        echo "   $PYTHON -m streamlit run streamlit_app.py --server.port 8502"
+        echo "   $PYTHON -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502"
         exit 1
     fi
 fi
@@ -49,7 +45,7 @@ echo "💡 Press Ctrl+C to stop the server"
 echo ""
 
 # Run with selected Python
-"$PYTHON" -m streamlit run streamlit_app.py \
+"$PYTHON" -m streamlit run src/peptidia/web/streamlit_app.py \
     --server.port 8501 \
     --server.headless true \
     --server.enableCORS false \

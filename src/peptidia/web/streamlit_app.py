@@ -29,9 +29,13 @@ import sys
 import warnings
 import time
 
+# Add the project root to Python path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 # Import file discovery functions
-from file_discovery import discover_available_files, get_available_methods, get_files_for_method, extract_method_and_group_from_filename, group_files_by_triplicates
-from dataset_utils import discover_available_files_by_dataset, extract_method_from_filename, get_configured_methods, get_files_for_configured_method
+from src.peptidia.core.file_discovery import discover_available_files, get_available_methods, get_files_for_method, extract_method_and_group_from_filename, group_files_by_triplicates
+from src.peptidia.core.dataset_utils import discover_available_files_by_dataset, extract_method_from_filename, get_configured_methods, get_files_for_configured_method
 
 # Import functions are now available locally in peptide_validator_api.py
 # No need for external scripts directory
@@ -1941,7 +1945,7 @@ def show_training_interface():
         log_container = st.empty()
         
         # Import the backend API
-        from peptide_validator_api import run_peptide_validation
+        from src.peptidia.core.peptide_validator_api import run_peptide_validation
         import time
         import contextlib
         from io import StringIO
@@ -3968,7 +3972,7 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
         
         try:
             import joblib
-            from peptide_validator_api import PeptideValidatorAPI
+            from src.peptidia.core.peptide_validator_api import PeptideValidatorAPI
             
             # Create API instance
             api = PeptideValidatorAPI()
@@ -4251,7 +4255,7 @@ def run_inference(selected_model, test_method, test_fdr, target_fdr_levels):
     
     # Import the flexible peptide validator functions from local API
     try:
-        from peptide_validator_api import make_advanced_features, find_optimal_threshold
+        from src.peptidia.core.peptide_validator_api import make_advanced_features, find_optimal_threshold
     except ImportError:
         st.error("Could not import flexible_peptide_validator functions from local API. Please ensure the module is available.")
         return
@@ -4364,7 +4368,7 @@ def run_single_inference(config):
             }
         
         # Create features (import from the local API)
-        from peptide_validator_api import make_advanced_features
+        from src.peptidia.core.peptide_validator_api import make_advanced_features
         
         X_test = make_advanced_features(test_data, show_details=False)
         
@@ -4394,7 +4398,7 @@ def run_single_inference(config):
             y_pred_proba = model.predict(X_test)
         
         # Find optimal threshold for target FDR
-        from peptide_validator_api import find_optimal_threshold
+        from src.peptidia.core.peptide_validator_api import find_optimal_threshold
         optimal_threshold = find_optimal_threshold(y_test_true, y_pred_proba, target_fdr)
         
         # Make predictions
