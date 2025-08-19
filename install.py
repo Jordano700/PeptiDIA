@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PeptiDIA Universal Installer
-One script that always works - creates isolated environment with exact tested versions
+
 """
 
 import sys
@@ -15,18 +15,20 @@ def print_header():
     """Print installation header."""
     print("🧬 PeptiDIA Universal Installer")
     print("=" * 50)
-    print("Creating isolated environment with tested versions...")
+    print("Creating isolated environment with tested versions")
     print()
 
 def check_python_version():
-    """Check if Python version is compatible."""
+    """Require Python 3.12.x to match project environment."""
     version = sys.version_info
-    if version < (3, 8):
-        print("❌ INCOMPATIBLE PYTHON VERSION")
+    if not (version.major == 3 and version.minor == 12):
+        print("❌ INCOMPATIBLE PYTHON VERSION FOR PeptiDIA")
         print(f"   Current: Python {version.major}.{version.minor}.{version.micro}")
-        print("   Required: Python 3.8 or higher")
+        print("   Required: Python 3.12.x (recommended 3.12.2)")
         print()
-        print("💡 Please install Python 3.8+ from: https://python.org/downloads")
+        print("💡 Options:")
+        print("   - Use Conda: conda env create -f environment.yml && conda activate peptidia")
+        print("   - Or install Python 3.12.2 (pyenv recommended) and rerun: python install.py")
         return False
     
     print(f"✅ Python {version.major}.{version.minor}.{version.micro} - Compatible!")
@@ -60,20 +62,21 @@ def get_venv_python(venv_path):
         return venv_path / "bin" / "python"
 
 def install_dependencies(python_exe):
-    """Install exact tested versions."""
-    print("📦 Installing exact tested versions...")
-    print("   (This ensures everything works together)")
+    """Install dependencies from locked file if present, else requirements.txt."""
+    print("📦 Installing dependencies...")
     
     try:
         # Upgrade pip first
         subprocess.check_call([
             str(python_exe), "-m", "pip", "install", "--upgrade", "pip"
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ])
         
-        # Install exact versions
+        req_file = "requirements-locked.txt" if Path("requirements-locked.txt").exists() else "requirements.txt"
+        print(f"   Using {req_file}")
+        
         subprocess.check_call([
-            str(python_exe), "-m", "pip", "install", "-r", "requirements.txt"
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            str(python_exe), "-m", "pip", "install", "-r", req_file
+        ])
         
         print("✅ All dependencies installed successfully!")
         return True
@@ -98,7 +101,7 @@ print("SUCCESS")
     try:
         result = subprocess.run([
             str(python_exe), "-c", test_script
-        ], capture_output=True, text=True, timeout=30)
+        ], capture_output=True, text=True, timeout=60)
         
         if result.returncode == 0 and "SUCCESS" in result.stdout:
             print("✅ Installation test passed!")
@@ -114,21 +117,77 @@ print("SUCCESS")
         print(f"❌ Test error: {e}")
         return False
 
+echo 🧬 Starting PeptiDIA...
+echo "🧬 Starting PeptiDIA..."
+def create_launchers(venv_path):
+    """Create both Unix (.sh) and Windows (.bat) launchers regardless of host OS.
 
-def print_success_message():
-    """Print final success message."""
+    Launchers auto-detect the local venv first and fall back to system Python.
+    """
+    # Unix shell launcher (works on macOS/Linux)
+    sh_content = '''#!/bin/bash
+echo "🧬 Starting PeptiDIA..."
+cd "$(dirname "$0")"
+if [ -x "./peptidia_env/bin/python" ]; then
+    PY="./peptidia_env/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PY="python3"
+else
+    PY="python"
+fi
+"$PY" -m streamlit run streamlit_app.py --server.port 8501
+'''
+    sh_path = Path("start_peptidia.sh")
+    sh_path.write_text(sh_content)
+    try:
+        os.chmod(sh_path, 0o755)
+    except Exception:
+        pass
+
+    # Windows batch launcher
+    bat_content = '''@echo off
+title PeptiDIA
+echo 🧬 Starting PeptiDIA...
+cd /d "%~dp0"
+if exist "peptidia_env\Scripts\python.exe" (
+  set "PY=peptidia_env\Scripts\python.exe"
+) else (
+  set "PY=python"
+)
+"%PY%" -m streamlit run streamlit_app.py --server.port 8501
+if errorlevel 1 (
+  echo.
+  echo ❌ PeptiDIA failed to start
+  echo 💡 Check that port 8501 is available
+  echo    Or run: "%PY%" -m streamlit run streamlit_app.py --server.port 8502
+  pause
+)
+'''
+    bat_path = Path("start_peptidia.bat")
+    bat_path.write_text(bat_content)
+
+    print(f"✅ Launchers created: {sh_path} and {bat_path}")
+    # Return platform-preferred path for convenience
+    preferred = bat_path if platform.system() == "Windows" else sh_path
+    return preferred, sh_path, bat_path
+
+def print_success_message(preferred_launcher, sh_path, bat_path):
+    """Print final success message with both launchers."""
     print()
     print("🎉 INSTALLATION COMPLETE!")
     print("=" * 50)
     print()
-    print("🚀 Available tools:")
-    print("   📱 Web Interface:     ./run_streamlit.sh")
-    print("   💻 Command Line:      ./run_cli.sh") 
-    print("   📊 DIA-NN Comparison: ./run_comparison.sh")
+    print("🚀 To start PeptiDIA:")
+    print(f"   📁 Unix/macOS: ./{sh_path}")
+    print(f"   📁 Windows: {bat_path}")
+    print(f"   ⭐ Preferred for this system: {preferred_launcher}")
+    
+    print()
+    print("📱 Then open your browser to: http://localhost:8501")
     print()
     print("📂 Next steps:")
     print("   1. Put your DIA-NN .parquet files in the 'data/' folder")
-    print("   2. Choose your tool and run it!")
+    print("   2. Follow the web interface - it guides you through everything!")
     print()
     print("💡 Need help? Open an issue on GitHub")
 
@@ -159,8 +218,11 @@ def main():
     if not test_installation(python_exe):
         print("⚠️  Installation may have issues, but continuing...")
     
+    # Create launchers
+    preferred, sh_launcher, bat_launcher = create_launchers(venv_path)
+    
     # Success message
-    print_success_message()
+    print_success_message(preferred, sh_launcher, bat_launcher)
 
 if __name__ == "__main__":
     try:

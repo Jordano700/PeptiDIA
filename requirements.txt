@@ -1,5 +1,5 @@
 # PeptiDIA Requirements - Exact Tested Versions
-# These exact versions have been tested together and are guaranteed to work
+# These exact versions have been tested together
 
 # Core framework
 streamlit==1.45.1

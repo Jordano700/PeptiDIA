@@ -15,21 +15,35 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 
 ## Quick Start (3 steps!)
 
-### Step 1: Get PeptiDIA & Install
+### Step 1: Get PeptiDIA & Install (Python 3.12.2)
 ```bash
 git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
+
+# Option A: Use installer (requires Python 3.12.2)
 python install.py
+
+# Option B: Conda (installs Python 3.12.2)
+conda env create -f environment.yml
+conda activate peptidia
+pip install -r requirements.txt
+
+# Option C: venv (requires Python 3.12.2 installed on your system)
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+Note: If `python3.12` is not found, install Python 3.12.2 first (e.g., via pyenv, Homebrew, winget, or your OS package manager).
 ```
 
 **That's it!** The installer:
-- ✅ Checks your Python version (3.8+ required)
+- ✅ Checks your Python version (requires 3.12.2)
 - ✅ Creates an isolated virtual environment 
 - ✅ Installs exact tested versions that work together
 - ✅ Tests the installation
 - ✅ Sets up launcher scripts for all tools
 
-*Works on Windows, Mac, and Linux with any Python 3.8+*
+*Works on Windows, Mac, and Linux with Python 3.12.2*
 
 ### Step 2: Add Your DIA-NN Data
 Put your DIA-NN analyzed `.parquet` files in the `data/` folder with these **specific FDR levels**:
