@@ -1,17 +1,14 @@
 #!/bin/bash
+# PeptiDIA Streamlit Web Interface Launcher
 
-# 🧬 Interactive Peptide Validator - Launcher Script
-# ================================================================================
-# This script launches the Streamlit web interface for peptide validation
+echo "🧬 Starting PeptiDIA Web Interface..."
 
-echo "🧬 Starting PeptiDIA..."
-echo "🌐 The web interface will open automatically in your browser"
-echo ""
-
-# Check if streamlit is installed
-if ! command -v streamlit &> /dev/null; then
-    echo "❌ Streamlit not found. Installing required packages..."
-    pip install -r requirements.txt
+# Check if virtual environment exists
+if [ ! -d "peptidia_env" ]; then
+    echo "❌ Virtual environment not found!"
+    echo "💡 Please run: python install.py"
+    echo "   This will create the environment and install dependencies."
+    exit 1
 fi
 
 # Check if port 8501 is already in use
@@ -22,37 +19,23 @@ if lsof -i :8501 >/dev/null 2>&1; then
     if pgrep -f "streamlit.*streamlit_app.py" >/dev/null; then
         echo "✅ PeptiDIA is already running at http://localhost:8501"
         echo "📱 Open your browser and navigate to: http://localhost:8501"
-        echo ""
-        echo "💡 To restart the app:"
-        echo "  1. Press Ctrl+C in the terminal where it's running"
-        echo "  2. Or run: pkill -f streamlit"
-        echo "  3. Then run this script again"
         exit 0
     else
         echo "❌ Another application is using port 8501"
-        echo "💡 You can:"
-        echo "  1. Stop the other application"
-        echo "  2. Or modify this script to use a different port"
+        echo "💡 You can run with a different port:"
+        echo "   ./peptidia_env/bin/python -m streamlit run streamlit_app.py --server.port 8502"
         exit 1
     fi
 fi
 
-# Set environment variables for optimal performance
-export STREAMLIT_SERVER_HEADLESS=true
-export STREAMLIT_SERVER_ENABLE_CORS=false
-export STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false
-
-# Launch Streamlit app
 echo "🚀 Launching Streamlit app..."
 echo "📱 Access the interface at: http://localhost:8501"
 echo ""
-echo "💡 Tips:"
-echo "  - Use Ctrl+C to stop the server"
-echo "  - Check the terminal for any error messages"
+echo "💡 Press Ctrl+C to stop the server"
 echo ""
 
-# Run the Streamlit app
-streamlit run streamlit_app.py \
+# Run with virtual environment Python
+./peptidia_env/bin/python -m streamlit run streamlit_app.py \
     --server.port 8501 \
     --server.headless true \
     --server.enableCORS false \
