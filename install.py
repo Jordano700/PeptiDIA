@@ -117,8 +117,6 @@ print("SUCCESS")
         print(f"❌ Test error: {e}")
         return False
 
-echo 🧬 Starting PeptiDIA...
-echo "🧬 Starting PeptiDIA..."
 def create_launchers(venv_path):
     """Create both Unix (.sh) and Windows (.bat) launchers regardless of host OS.
 
@@ -126,7 +124,7 @@ def create_launchers(venv_path):
     """
     # Unix shell launcher (works on macOS/Linux)
     sh_content = '''#!/bin/bash
-echo "🧬 Starting PeptiDIA..."
+echo "Starting PeptiDIA..."
 cd "$(dirname "$0")"
 if [ -x "./peptidia_env/bin/python" ]; then
     PY="./peptidia_env/bin/python"
@@ -147,7 +145,7 @@ fi
     # Windows batch launcher
     bat_content = '''@echo off
 title PeptiDIA
-echo 🧬 Starting PeptiDIA...
+echo Starting PeptiDIA...
 cd /d "%~dp0"
 if exist "peptidia_env\Scripts\python.exe" (
   set "PY=peptidia_env\Scripts\python.exe"
@@ -157,8 +155,8 @@ if exist "peptidia_env\Scripts\python.exe" (
 "%PY%" -m streamlit run streamlit_app.py --server.port 8501
 if errorlevel 1 (
   echo.
-  echo ❌ PeptiDIA failed to start
-  echo 💡 Check that port 8501 is available
+  echo ERROR: PeptiDIA failed to start
+  echo TIP: Check that port 8501 is available
   echo    Or run: "%PY%" -m streamlit run streamlit_app.py --server.port 8502
   pause
 )
