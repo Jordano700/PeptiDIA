@@ -30,7 +30,7 @@ import warnings
 import time
 
 # Add the project root to Python path for imports
-project_root = Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.resolve()
 sys.path.insert(0, str(project_root))
 
 # Import file discovery functions
@@ -204,7 +204,8 @@ st.markdown("""
         background-color: #f8f9fa;
     }
     
-    /* Button styling - Updated for Streamlit 1.45+ with aggressive overrides */
+    /* Button styling - Updated for Streamlit 1.45+ with cache-busting timestamp */
+    /* Cache-bust: ${new Date().getTime()} */
     .stButton > button,
     div[data-testid="stButton"] > button,
     button[data-testid="baseButton-primary"],
@@ -221,6 +222,20 @@ st.markdown("""
         padding: 0.5rem 1rem !important;
         font-weight: 500 !important;
         transition: all 0.3s ease !important;
+    }
+    
+    /* Multiselect button styling - for FDR level buttons */
+    .stMultiSelect > div > div > div > div > button,
+    [data-testid="stMultiSelect"] button,
+    .st-multiselect-item,
+    div[data-baseweb="tag"] > span {
+        background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
+        background-color: #2E86AB !important;
+        color: white !important;
+        border: 1px solid #2E86AB !important;
+        border-radius: 6px !important;
+        padding: 0.25rem 0.75rem !important;
+        font-weight: 500 !important;
     }
     
     .stButton > button:hover,
@@ -556,7 +571,7 @@ def discover_available_files():
     │   └── long_gradient/                 # Ground truth (slow gradient)
     │       └── FDR_1/                    # GROUND TRUTH files (1% FDR)
     """
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    data_dir = "data"
     
     files_info = {
         'baseline': [],  # Fast gradient FDR_1
@@ -740,7 +755,7 @@ def discover_datasets_for_setup(config, results, runtime_minutes):
             }
         }
     """
-    data_dir = os.path.join(os.path.dirname(__file__), "data")
+    data_dir = "data"
     
     datasets_info = {}
     
@@ -1348,7 +1363,7 @@ def show_landing_page():
         for i, dataset in enumerate(dataset_list):
             with cols[i % num_cols]:
                 # Load dataset info if available
-                dataset_info_path = os.path.join(os.path.dirname(__file__), "data", dataset, "dataset_info.json")
+                dataset_info_path = os.path.join("data", dataset, "dataset_info.json")
                 icon = "📊"
                 description = f"Auto-discovered {dataset} dataset"
                 
@@ -5031,7 +5046,7 @@ def get_matching_ground_truth_method(test_method):
     """
     try:
         # Find which dataset this method belongs to by checking all dataset configs
-        data_dir = os.path.join(os.path.dirname(__file__), "data")
+        data_dir = "data"
         
         for dataset_dir in os.listdir(data_dir):
             dataset_path = os.path.join(data_dir, dataset_dir)
@@ -5075,7 +5090,7 @@ def load_ground_truth_peptides_inference(test_method=None):
 
             if mapping_info:
                 # Build expected path inside the configured dataset folder
-                data_dir = os.path.join(os.path.dirname(__file__), "data")
+                data_dir = "data"
                 expected_dir = os.path.join(
                     data_dir,
                     mapping_info['dataset'],
@@ -5557,24 +5572,67 @@ def show_setup_interface():
         
         st.markdown("### 🔗 Ground Truth Mapping Configuration")
         
-        # Strategy selection
+        # Load existing dataset info to check for pre-configured mapping
+        dataset_config_path = f"data/{selected_dataset}/dataset_info.json"
+        existing_ground_truth_mapping = {}
+        default_strategy = "use_all_ground_truth"
+        
+        if os.path.exists(dataset_config_path):
+            try:
+                with open(dataset_config_path, 'r') as f:
+                    dataset_config = json.load(f)
+                    if "ground_truth_mapping" in dataset_config:
+                        existing_ground_truth_mapping = dataset_config["ground_truth_mapping"]
+                        default_strategy = existing_ground_truth_mapping.get("_strategy", "use_all_ground_truth")
+                        if default_strategy not in ["use_all_ground_truth", "visual_mapping", "direct_mapping"]:
+                            default_strategy = "use_all_ground_truth"
+            except Exception as e:
+                st.warning(f"Could not load existing dataset config: {e}")
+        
+        # Show existing configuration if found
+        if existing_ground_truth_mapping:
+            strategy_name = existing_ground_truth_mapping.get("_strategy", "unknown")
+            st.info(f"ℹ️ **Pre-configured mapping found**: `{strategy_name}` strategy from dataset_info.json")
+            
+            if strategy_name == "direct_mapping" and "_direct_rules" in existing_ground_truth_mapping:
+                rules_count = len(existing_ground_truth_mapping["_direct_rules"])
+                st.success(f"✅ Direct mapping configured with {rules_count} method-to-ground-truth rules")
+        
+        # Strategy selection with existing configuration awareness
+        strategy_options = ["use_all_ground_truth", "visual_mapping"]
+        if existing_ground_truth_mapping.get("_strategy") == "direct_mapping":
+            strategy_options.insert(0, "direct_mapping")
+        
         strategy = st.radio(
             "Choose Mapping Strategy:",
-            options=[
-                "use_all_ground_truth",
-                "visual_mapping"
-            ],
+            options=strategy_options,
+            index=strategy_options.index(default_strategy) if default_strategy in strategy_options else 0,
             format_func=lambda x: {
+                "direct_mapping": "🎯 Direct Mapping (Pre-configured from dataset_info.json)",
                 "use_all_ground_truth": "📚 Use All Ground Truth Files (Simple)",
                 "visual_mapping": "🎨 Visual Connection Mapping (Interactive)"
             }[x],
-            help="Simple: Use all ground truth files for any method. Interactive: Visually connect methods to ground truth files."
+            help="Direct: Use pre-configured method-to-ground-truth mapping. Simple: Use all ground truth files for any method. Interactive: Visually connect methods to ground truth files."
         )
         
         # Configuration based on strategy
         mapping_config = {}
         
-        if strategy == "use_all_ground_truth":
+        if strategy == "direct_mapping":
+            st.success("✅ **Direct Mapping Strategy Selected**")
+            st.markdown("Using pre-configured method-to-ground-truth mapping from dataset_info.json")
+            
+            # Use the existing direct mapping configuration
+            mapping_config = existing_ground_truth_mapping.copy()
+            
+            # Show the direct mapping rules
+            if "_direct_rules" in existing_ground_truth_mapping:
+                st.markdown("#### 🎯 Configured Direct Mapping Rules:")
+                rules = existing_ground_truth_mapping["_direct_rules"]
+                for method, ground_truth in rules.items():
+                    st.markdown(f"- **{method}** → `{ground_truth}`")
+            
+        elif strategy == "use_all_ground_truth":
             st.success("✅ **Simple Strategy Selected**")
             st.markdown("Any training method will use **all** ground truth files from this dataset for validation.")
             
@@ -5836,9 +5894,9 @@ def show_setup_interface():
         <style>
         div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
         .stButton > button[kind="secondary"] {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%) !important;
-            color: #495057 !important;
-            border: 1px solid #dee2e6 !important;
+            background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
+            color: white !important;
+            border: none !important;
             font-weight: 500 !important;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
             transition: all 0.2s ease !important;
@@ -5846,9 +5904,9 @@ def show_setup_interface():
         
         div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"]:hover,
         .stButton > button[kind="secondary"]:hover {
-            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%) !important;
-            border-color: #adb5bd !important;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important;
+            background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
+            transform: translateY(-2px) !important;
+            box-shadow: 0 4px 12px rgba(46, 134, 171, 0.3) !important;
         }
         </style>
         """, unsafe_allow_html=True)
