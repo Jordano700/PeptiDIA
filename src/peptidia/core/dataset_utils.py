@@ -30,8 +30,7 @@ def discover_available_files_by_dataset():
     """
     # Point to project root data directory, not module-relative  
     # Go up 3 levels: core -> peptidia -> src -> project_root
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    data_dir = os.path.join(project_root, "data")
+    data_dir = "data"
     
     datasets_info = {}
     
@@ -143,8 +142,7 @@ def get_configured_methods(dataset_filter=None):
             
         # Check if there's a saved configuration for this dataset
         # Go up 3 levels: core -> peptidia -> src -> project_root
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        config_path = os.path.join(project_root, "data", dataset_name, "dataset_info.json")
+        config_path = os.path.join("data", dataset_name, "dataset_info.json")
         
         if os.path.exists(config_path):
             try:
@@ -418,9 +416,7 @@ def validate_ground_truth_files(method_name: str) -> bool:
             # Check ground truth file
             # Point to project root data directory, not module-relative
             # Go up 3 levels: core -> peptidia -> src -> project_root
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-            data_dir = os.path.join(project_root, "data")
-            pattern = f'{data_dir}/{dataset_name}/long_gradient/FDR_1/*{sample_id}*FDR1.parquet'
+            pattern = f'data/{dataset_name}/long_gradient/FDR_1/*{sample_id}*FDR1.parquet'
             ground_truth_files = glob.glob(pattern)
             
             for file_path in ground_truth_files:

@@ -369,20 +369,60 @@ class PeptideValidatorAPI:
             matched_files = []
             
             # Look for direct mapping of this method
+            matched_rule_key = None
+            
+            # First try exact match
             if test_method in direct_rules:
-                target_gt_filenames = direct_rules[test_method]
+                matched_rule_key = test_method
+            else:
+                # Try to find a matching group by extracting sample ID from the method name
+                # For methods like "Coeur_20250728_RD201_EXB_EV1107_300SPD_Coeur_A55_01"
+                # Extract "A55" and look for "Coeur_Group_A55" pattern
+                import re
+                
+                # Extract dataset name
+                dataset_name_lower = dataset_name.lower()
+                if dataset_name_lower in test_method.lower():
+                    # Look for sample ID pattern (like A55, A08, etc.)
+                    sample_match = re.search(r'_([A-Z]\d+)_', test_method)
+                    if sample_match:
+                        sample_id = sample_match.group(1)
+                        potential_group = f"{dataset_name}_Group_{sample_id}"
+                        if potential_group in direct_rules:
+                            matched_rule_key = potential_group
+                            print(f"Info: Mapped {test_method} -> {potential_group} via sample ID {sample_id}")
+            
+            if matched_rule_key:
+                target_gt_filenames = direct_rules[matched_rule_key]
 
                 if isinstance(target_gt_filenames, str):
                     target_gt_filenames = [target_gt_filenames]
 
-                for target_gt_filename in target_gt_filenames:
-                    for gt_file in dataset_gt_files:
-                        if target_gt_filename == gt_file['method']:
-                            matched_files.append(gt_file['path'])
-                            break
+                # For triplicate groups (like Coeur_Group_A55), find all files matching the sample ID
+                if "_Group_" in matched_rule_key:
+                    # Extract sample ID from group name (e.g., "A55" from "Coeur_Group_A55")
+                    group_parts = matched_rule_key.split("_Group_")
+                    if len(group_parts) == 2:
+                        sample_id = group_parts[1]  # e.g., "A55"
+                        
+                        # Find all ground truth files containing this sample ID
+                        for gt_file in dataset_gt_files:
+                            gt_method = gt_file['method']
+                            if sample_id in gt_method:
+                                matched_files.append(gt_file['path'])
+                        
+                        if matched_files:
+                            print(f"Info: Found {len(matched_files)} ground truth files for group {matched_rule_key} (sample {sample_id})")
+                else:
+                    # Standard exact matching for individual methods
+                    for target_gt_filename in target_gt_filenames:
+                        for gt_file in dataset_gt_files:
+                            if target_gt_filename == gt_file['method']:
+                                matched_files.append(gt_file['path'])
+                                break
 
                 if not matched_files:
-                    print(f"Info: Direct mapping has no existing files for {test_method} -> {target_gt_filenames}. Discovery mode.")
+                    print(f"Info: Direct mapping has no existing files for {matched_rule_key} -> {target_gt_filenames}. Discovery mode.")
             else:
                 print(f"Info: No direct mapping found for {test_method}. Discovery mode.")
 

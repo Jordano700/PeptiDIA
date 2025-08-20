@@ -5,13 +5,14 @@ cd /d "%~dp0"
 
 REM Kill any existing Streamlit processes to free up ports
 echo Checking for existing Streamlit processes...
-taskkill /F /IM python.exe /FI "WINDOWTITLE eq streamlit*" 2>nul
-taskkill /F /IM python.exe /FI "COMMANDLINE eq *streamlit*" 2>nul
-timeout /t 2 /nobreak >nul
+taskkill /F /IM python.exe 2>nul >nul
+taskkill /F /IM pythonw.exe 2>nul >nul
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8501') do taskkill /F /PID %%a 2>nul >nul
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr :8502') do taskkill /F /PID %%a 2>nul >nul
 
 REM Wait a moment for ports to be freed
 echo Waiting for ports to be available...
-timeout /t 3 /nobreak >nul
+timeout /t 5 /nobreak >nul
 
 if exist "peptidia_env\\Scripts\\python.exe" (
   set "PY=peptidia_env\\Scripts\\python.exe"
