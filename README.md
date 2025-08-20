@@ -97,6 +97,28 @@ For advanced users, PeptiDIA also provides a command-line interface:
 
 The web interface provides all functionality with a much more intuitive experience!
 
+## License
+This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
+
+## Citation
+If you use PeptiDIA in your research, please cite this work:
+
+```
+Ortona, J. (2025). PeptiDIA: Machine Learning-Enhanced Peptide Discovery in DIA-NN Data. 
+GitHub repository: https://github.com/Jordano700/PeptiDIA
+```
+
+BibTeX format:
+```bibtex
+@software{ortona2025peptidia,
+  author = {Ortona, Jordan},
+  title = {PeptiDIA: Machine Learning-Enhanced Peptide Discovery in DIA-NN Data},
+  year = {2025},
+  url = {https://github.com/Jordano700/PeptiDIA},
+  note = {Software for finding additional peptides in mass spectrometry data using AI}
+}
+```
+
 ## Need Help?
 
 - 🐛 Report issues on GitHub
