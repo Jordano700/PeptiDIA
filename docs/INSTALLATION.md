@@ -55,7 +55,7 @@ git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
 
 # 3) Run the installer with Python 3.12
-py -3.12 install.py
+py -3.12 scripts/install.py
 
 # 4) Launch the app
 ./start_peptidia.bat
@@ -68,13 +68,13 @@ git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
 
 # Option A: Installer (requires Python 3.12.2 available)
-python3.12 install.py
+python3.12 scripts/install.py
 ./start_peptidia.sh
 
 # Option B: Conda (installs Python 3.12.2)
 conda env create -f environment.yml
 conda activate peptidia
-./run_streamlit.sh
+./scripts/run_streamlit.sh
 ```
 
 ### 3.3 Installing Python 3.12 on macOS/Linux
@@ -127,7 +127,7 @@ source .venv/bin/activate
 - Web interface starts at: `http://localhost:8501`
 - If port 8501 is in use, launch with another port, for example:
 ```bash
-python -m streamlit run streamlit_app.py --server.port 8502
+python -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
 ```
 
 ---
@@ -164,18 +164,18 @@ Notes:
 
 Start the web UI:
 ```bash
-./run_streamlit.sh   # macOS/Linux (or use the installer launcher)
+./scripts/run_streamlit.sh   # macOS/Linux (or use the installer launcher)
 # Windows users can double-click start_peptidia.bat
 ```
 
 ### 5.2 Command Line Interface (CLI)
 ```bash
-./run_cli.sh
+./scripts/run_cli.sh
 ```
 
 ### 5.3 Comparison Workflow
 ```bash
-./run_comparison.sh
+./scripts/run_comparison.sh
 ```
 
 ---

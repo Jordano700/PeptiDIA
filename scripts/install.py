@@ -38,11 +38,16 @@ def create_virtual_environment():
     """Create virtual environment."""
     venv_path = Path("peptidia_env")
     
-    # Remove existing environment if it exists
+    # Check if environment already exists and is working
     if venv_path.exists():
-        print("🗑️  Removing existing environment...")
-        import shutil
-        shutil.rmtree(venv_path)
+        python_exe = get_venv_python(venv_path)
+        if python_exe.exists():
+            print("✅ Virtual environment already exists - reusing")
+            return venv_path
+        else:
+            print("🗑️  Removing corrupted environment...")
+            import shutil
+            shutil.rmtree(venv_path)
     
     print("🏗️  Creating fresh virtual environment...")
     try:
@@ -61,9 +66,35 @@ def get_venv_python(venv_path):
     else:
         return venv_path / "bin" / "python"
 
+def check_packages_installed(python_exe):
+    """Check if key packages are already installed to avoid reinstalling."""
+    try:
+        test_script = '''
+import streamlit
+import pandas
+import numpy
+import plotly
+import sklearn
+print("PACKAGES_OK")
+'''
+        result = subprocess.run([
+            str(python_exe), "-c", test_script
+        ], capture_output=True, text=True, timeout=10)
+        
+        return result.returncode == 0 and "PACKAGES_OK" in result.stdout
+    except Exception:
+        return False
+
 def install_dependencies(python_exe):
     """Install dependencies from locked file if present, else requirements.txt."""
-    print("📦 Installing dependencies...")
+    print("📦 Checking dependencies...")
+    
+    # Check if packages are already installed
+    if check_packages_installed(python_exe):
+        print("✅ All key packages already installed - skipping installation")
+        return True
+    
+    print("📦 Installing missing dependencies...")
     
     try:
         # Upgrade pip first
@@ -126,6 +157,15 @@ def create_launchers(venv_path):
     sh_content = '''#!/bin/bash
 echo "Starting PeptiDIA..."
 cd "$(dirname "$0")"
+
+# Kill any existing Streamlit processes to free up ports
+echo "Checking for existing Streamlit processes..."
+pkill -f "streamlit" 2>/dev/null || true
+sleep 2
+
+echo "Waiting for ports to be available..."
+sleep 1
+
 if [ -x "./peptidia_env/bin/python" ]; then
     PY="./peptidia_env/bin/python"
 elif command -v python3 >/dev/null 2>&1; then
@@ -133,7 +173,14 @@ elif command -v python3 >/dev/null 2>&1; then
 else
     PY="python"
 fi
+
+echo "Launching PeptiDIA on port 8501..."
 "$PY" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8501
+if [ $? -ne 0 ]; then
+    echo "ERROR: PeptiDIA failed to start on port 8501"
+    echo "Trying alternative port 8502..."
+    "$PY" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
+fi
 '''
     sh_path = Path("start_peptidia.sh")
     sh_path.write_text(sh_content)
@@ -147,18 +194,36 @@ fi
 title PeptiDIA
 echo Starting PeptiDIA...
 cd /d "%~dp0"
+
+REM Kill any existing Streamlit processes to free up ports
+echo Checking for existing Streamlit processes...
+taskkill /F /IM python.exe /FI "WINDOWTITLE eq streamlit*" 2>nul
+taskkill /F /IM python.exe /FI "COMMANDLINE eq *streamlit*" 2>nul
+timeout /t 2 /nobreak >nul
+
+REM Wait a moment for ports to be freed
+echo Waiting for ports to be available...
+timeout /t 3 /nobreak >nul
+
 if exist "peptidia_env\\Scripts\\python.exe" (
   set "PY=peptidia_env\\Scripts\\python.exe"
 ) else (
   set "PY=python"
 )
+
+echo Launching PeptiDIA on port 8501...
 "%PY%" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8501
 if errorlevel 1 (
   echo.
-  echo ERROR: PeptiDIA failed to start
-  echo TIP: Check that port 8501 is available
-  echo    Or run: "%PY%" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
-  pause
+  echo ERROR: PeptiDIA failed to start on port 8501
+  echo Trying alternative port 8502...
+  "%PY%" -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
+  if errorlevel 1 (
+    echo.
+    echo ERROR: PeptiDIA failed to start on both ports
+    echo TIP: Try closing all browser tabs and restarting
+    pause
+  )
 )
 '''
     bat_path = Path("start_peptidia.bat")
@@ -177,8 +242,15 @@ def print_success_message(preferred_launcher, sh_path, bat_path):
     print()
     print("🚀 To start PeptiDIA:")
     print(f"   📁 Unix/macOS: ./{sh_path}")
-    print(f"   📁 Windows: {bat_path}")
-    print(f"   ⭐ Preferred for this system: {preferred_launcher}")
+    print(f"   📁 Windows PowerShell: ./{bat_path}")
+    print(f"   📁 Windows CMD: {bat_path}")
+    
+    # Show platform-specific preferred command
+    current_os = platform.system()
+    if current_os == "Windows":
+        print(f"   ⭐ Recommended for PowerShell: ./{bat_path}")
+    else:
+        print(f"   ⭐ Preferred for this system: ./{preferred_launcher}")
     
     print()
     print("📱 Then open your browser to: http://localhost:8501")

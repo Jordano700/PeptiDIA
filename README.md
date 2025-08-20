@@ -21,7 +21,7 @@ git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
 
 # Option A: Use installer (requires Python 3.12.2)
-python install.py
+python scripts/install.py
 
 # Option B: Conda (installs Python 3.12.2)
 conda env create -f environment.yml
@@ -71,17 +71,17 @@ data/
 
 **Web Interface (Recommended):**
 ```bash
-./run_streamlit.sh
+./scripts/run_streamlit.sh
 ```
 
 **Command Line Interface:**
 ```bash
-./run_cli.sh
+./scripts/run_cli.sh
 ```
 
 **Performance Comparison:**
 ```bash
-./run_comparison.sh
+./scripts/run_comparison.sh
 ```
 
 Then open your web browser to `http://localhost:8501` for the web interface.
@@ -112,7 +112,7 @@ The interface walks you through each step - no guessing needed!
 For advanced users, PeptiDIA also provides a command-line interface:
 
 ```bash
-./run_cli.sh
+./scripts/run_cli.sh
 ```
 
 **⚠️ Note:** While the CLI is available, **we strongly recommend using the Streamlit web interface** for the full PeptiDIA experience:

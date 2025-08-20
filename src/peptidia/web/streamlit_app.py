@@ -204,20 +204,32 @@ st.markdown("""
         background-color: #f8f9fa;
     }
     
-    /* Button styling */
-    .stButton > button {
-        background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.5rem 1rem;
-        font-weight: 500;
-        transition: all 0.3s ease;
+    /* Button styling - Updated for Streamlit 1.45+ with aggressive overrides */
+    .stButton > button,
+    div[data-testid="stButton"] > button,
+    button[data-testid="baseButton-primary"],
+    button[data-testid="baseButton-secondary"],
+    button[kind="primary"],
+    button[kind="secondary"],
+    .stButton button,
+    [data-testid="stButton"] button {
+        background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
+        background-color: #2E86AB !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        font-weight: 500 !important;
+        transition: all 0.3s ease !important;
     }
     
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(46, 134, 171, 0.3);
+    .stButton > button:hover,
+    div[data-testid="stButton"] > button:hover,
+    button[data-testid="baseButton-primary"]:hover,
+    button[data-testid="baseButton-secondary"]:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 4px 12px rgba(46, 134, 171, 0.3) !important;
+        background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
     }
     
     /* Metric cards */

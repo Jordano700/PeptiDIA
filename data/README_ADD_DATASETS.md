@@ -31,7 +31,7 @@ The tool automatically extracts meaningful method names from ANY filename!
 
 ### 3. Launch and Use
 ```bash
-./run_streamlit.sh
+./scripts/run_streamlit.sh
 ```
 
 Your dataset will appear automatically in the interface! ✨
