@@ -15,35 +15,22 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 
 ## Quick Start (3 steps!)
 
-### Step 1: Get PeptiDIA & Install (Python 3.12.2)
+📋 **For detailed installation instructions, see [INSTALL_GUIDE.md](INSTALL_GUIDE.md)**
+
+### Step 1: Get PeptiDIA & Install
 ```bash
 git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
-
-# Option A: Use installer (requires Python 3.12.2)
 python scripts/install.py
-
-# Option B: Conda (installs Python 3.12.2)
-conda env create -f environment.yml
-conda activate peptidia
-pip install -r requirements.txt
-
-# Option C: venv (requires Python 3.12.2 installed on your system)
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-Note: If `python3.12` is not found, install Python 3.12.2 first (e.g., via pyenv, Homebrew, winget, or your OS package manager). For OS-specific steps (including Windows PowerShell), see `PEPTIDIA_GUIDE.md`.
 ```
 
-**That's it!** The installer:
-- ✅ Checks your Python version (requires 3.12.2)
-- ✅ Creates an isolated virtual environment 
-- ✅ Installs exact tested versions that work together
-- ✅ Tests the installation
-- ✅ Sets up launcher scripts for all tools
+**Windows users:** Use `start_peptidia.bat` | **Mac/Linux users:** Use `./start_peptidia.sh`
 
-*Works on Windows, Mac, and Linux with Python 3.12.2*
+The installer automatically:
+- ✅ Checks Python version (requires 3.12.2)
+- ✅ Creates virtual environment  
+- ✅ Installs dependencies
+- ✅ Sets up launcher scripts
 
 ### Step 2: Add Your DIA-NN Data
 Put your DIA-NN analyzed `.parquet` files in the `data/` folder with these **specific FDR levels**:
@@ -69,22 +56,19 @@ data/
 
 ### Step 3: Run PeptiDIA
 
-**Web Interface (Recommended):**
-```bash
-./scripts/run_streamlit.sh
+**Windows:**
+```batch
+start_peptidia.bat
 ```
 
-**Command Line Interface:**
+**Mac/Linux:**
 ```bash
-./scripts/run_cli.sh
+./start_peptidia.sh
 ```
 
-**Performance Comparison:**
-```bash
-./scripts/run_comparison.sh
-```
+Opens automatically at `http://localhost:8501`
 
-Then open your web browser to `http://localhost:8501` for the web interface.
+💡 **Having issues?** Check [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for troubleshooting (port conflicts, etc.)
 
 ## Interface Modes 🎛️
 
@@ -122,6 +106,22 @@ For advanced users, PeptiDIA also provides a command-line interface:
 - 🎯 **Better usability** - No command-line complexity
 
 The web interface provides all functionality with a much more intuitive experience!
+
+## Quick Troubleshooting
+
+**Port 8501 already in use?**
+```bash
+# Kill existing process and restart
+lsof -ti:8501 | xargs kill -9  # Mac/Linux
+./start_peptidia.sh
+```
+
+**Python not found?** Install Python 3.12.2 first:
+- **Windows:** `winget install Python.Python.3.12`
+- **Mac:** `brew install python@3.12` 
+- **Linux:** `sudo apt install python3.12`
+
+📋 **Full troubleshooting guide:** [INSTALL_GUIDE.md](INSTALL_GUIDE.md)
 
 ## Need Help?
 
