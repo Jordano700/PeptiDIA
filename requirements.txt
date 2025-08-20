@@ -1,4 +1,4 @@
-# PeptiDIA Requirements - Exact Tested Versions
+# PeptiDIA Requirements 
 # These exact versions have been tested together
 
 # Core framework
