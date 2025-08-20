@@ -24,12 +24,6 @@ cd PeptiDIA
 python scripts/install.py
 ```
 
-The installer automatically:
-- ✅ Checks Python version (requires 3.12.2)
-- ✅ Creates virtual environment  
-- ✅ Installs dependencies
-- ✅ Sets up launcher scripts
-
 ### Step 2: Add Your DIA-NN Data
 Put your DIA-NN analyzed `.parquet` files in the `data/` folder with these **specific FDR levels**:
 ```
@@ -65,8 +59,6 @@ start_peptidia.bat
 ```
 
 Opens automatically at `http://localhost:8501`
-
-💡 **Having issues?** Check [docs/PEPTIDIA_FULL_GUIDE.md](docs/PEPTIDIA_FULL_GUIDE.md) for troubleshooting 
 
 ## Interface Modes 🎛️
 
