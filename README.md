@@ -15,7 +15,7 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 
 ## Quick Start (3 steps!)
 
-📋 **For detailed installation instructions, see [docs/PEPTIDIA_FULL_GUIDE.md](docs/PEPTIDIA_FULL_GUIDE.md)**
+📋 **For detailed instructions, see the [full PeptiDIA guide](docs/PEPTIDIA_FULL_GUIDE.md)**
 
 ### Step 1: Get PeptiDIA & Install
 ```bash
