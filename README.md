@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="peptidia_official_logo.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
+  <img src="assets/peptidia_official_logo.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
   
   # PeptiDIA
   **Find More Peptides in Your Data** 🧬
@@ -15,7 +15,7 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 
 ## Quick Start (3 steps!)
 
-📋 **For detailed installation instructions, see [INSTALL_GUIDE.md](INSTALL_GUIDE.md)**
+📋 **For detailed installation instructions, see [docs/PEPTIDIA_FULL_GUIDE.md](docs/PEPTIDIA_FULL_GUIDE.md)**
 
 ### Step 1: Get PeptiDIA & Install
 ```bash
@@ -23,8 +23,6 @@ git clone https://github.com/Jordano700/PeptiDIA.git
 cd PeptiDIA
 python scripts/install.py
 ```
-
-**Windows users:** Use `start_peptidia.bat` | **Mac/Linux users:** Use `./start_peptidia.sh`
 
 The installer automatically:
 - ✅ Checks Python version (requires 3.12.2)
@@ -68,7 +66,7 @@ start_peptidia.bat
 
 Opens automatically at `http://localhost:8501`
 
-💡 **Having issues?** Check [INSTALL_GUIDE.md](INSTALL_GUIDE.md) for troubleshooting (port conflicts, etc.)
+💡 **Having issues?** Check [docs/PEPTIDIA_FULL_GUIDE.md](docs/PEPTIDIA_FULL_GUIDE.md) for troubleshooting 
 
 ## Interface Modes 🎛️
 
@@ -106,22 +104,6 @@ For advanced users, PeptiDIA also provides a command-line interface:
 - 🎯 **Better usability** - No command-line complexity
 
 The web interface provides all functionality with a much more intuitive experience!
-
-## Quick Troubleshooting
-
-**Port 8501 already in use?**
-```bash
-# Kill existing process and restart
-lsof -ti:8501 | xargs kill -9  # Mac/Linux
-./start_peptidia.sh
-```
-
-**Python not found?** Install Python 3.12.2 first:
-- **Windows:** `winget install Python.Python.3.12`
-- **Mac:** `brew install python@3.12` 
-- **Linux:** `sudo apt install python3.12`
-
-📋 **Full troubleshooting guide:** [INSTALL_GUIDE.md](INSTALL_GUIDE.md)
 
 ## Need Help?
 
