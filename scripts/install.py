@@ -27,7 +27,7 @@ def check_python_version():
         print("   Required: Python 3.12.x (recommended 3.12.2)")
         print()
         print("💡 Options:")
-        print("   - Use Conda: conda env create -f environment.yml && conda activate peptidia")
+        print("   - Use Conda: conda env create -f config/environment.yml && conda activate peptidia")
         print("   - Or install Python 3.12.2 (pyenv recommended) and rerun: python install.py")
         return False
     
@@ -102,7 +102,7 @@ def install_dependencies(python_exe):
             str(python_exe), "-m", "pip", "install", "--upgrade", "pip"
         ])
         
-        req_file = "requirements.txt"
+        req_file = "config/requirements.txt"
         print(f"   Using {req_file}")
         
         subprocess.check_call([

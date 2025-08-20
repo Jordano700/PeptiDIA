@@ -1,4 +1,4 @@
-# PeptiDIA User Guide (Whitepaper)
+# PeptiDIA User Guide (Work in progress)
 
 ## Table of Contents
 - [1. Overview](#1-overview)
@@ -72,9 +72,9 @@ python3.12 scripts/install.py
 ./start_peptidia.sh
 
 # Option B: Conda (installs Python 3.12.2)
-conda env create -f environment.yml
+conda env create -f config/environment.yml
 conda activate peptidia
-./scripts/run_streamlit.sh
+./start_peptidia.sh
 ```
 
 ### 3.3 Installing Python 3.12 on macOS/Linux
@@ -164,7 +164,7 @@ Notes:
 
 Start the web UI:
 ```bash
-./scripts/run_streamlit.sh   # macOS/Linux (or use the installer launcher)
+./start_peptidia.sh   # macOS/Linux (or use the installer launcher)
 # Windows users can double-click start_peptidia.bat
 ```
 
@@ -189,8 +189,38 @@ Typical outputs (indicative):
 ---
 
 ## 7. Troubleshooting
-- **Port 8501 in use**: run Streamlit with `--server.port 8502`
+
+### Port Issues
+**"Port 8501 is already in use" Error:**
+
+**Option 1: Kill existing process (Recommended)**
+```bash
+# Mac/Linux
+lsof -ti:8501 | xargs kill -9
+./start_peptidia.sh
+
+# Windows PowerShell  
+netstat -ano | findstr :8501
+taskkill /PID <PID_NUMBER> /F
+start_peptidia.bat
+```
+
+**Option 2: Use a different port**
+```bash
+# Manual launch with different port
+streamlit run src/peptidia/web/streamlit_app.py --server.port=8502
+# Then open http://localhost:8502
+```
+
+### Installation Issues
 - **Missing dependencies**: the launch scripts auto-install from `requirements-locked.txt` (if present) or `requirements.txt`
+- **Python not found**: Install Python 3.12.2 first:
+  - **Windows:** `winget install Python.Python.3.12`
+  - **Mac:** `brew install python@3.12` 
+  - **Linux:** `sudo apt install python3.12 python3.12-venv`
+- **"pip not recognized" (Windows)**: Use `python -m pip` instead of `pip`
+
+### Repository Issues  
 - **Private repo cloning**: use SSH keys or a GitHub Personal Access Token
 - **DNS issues cloning GitHub**: restart DNS (`systemd-resolved`), set DNS to `1.1.1.1/8.8.8.8`, or try another network
 - **Windows installer errors (encoding)**: the installer generates an ASCII-only `.bat` launcher

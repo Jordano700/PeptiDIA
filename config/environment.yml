@@ -5,4 +5,4 @@ dependencies:
   - python=3.12.2
   - pip
   - pip:
-      - -r requirements.txt
+      - -r config/requirements.txt

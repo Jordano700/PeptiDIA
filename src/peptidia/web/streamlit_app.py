@@ -1932,8 +1932,7 @@ def show_training_interface():
         
         # DNA loading animation - check local paths only
         possible_paths = [
-            "./assets/dna_loading.gif",
-            "./dna_loading.gif"
+            "./assets/dna_loading.gif"
         ]
         
         gif_loaded = False
