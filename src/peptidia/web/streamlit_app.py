@@ -205,7 +205,7 @@ st.markdown("""
     }
     
     /* Button styling - Updated for Streamlit 1.45+ with cache-busting timestamp */
-    /* Cache-bust: ${new Date().getTime()} */
+    /* Cache-bust: 1725285600000 */
     .stButton > button,
     div[data-testid="stButton"] > button,
     button[data-testid="baseButton-primary"],
@@ -213,7 +213,10 @@ st.markdown("""
     button[kind="primary"],
     button[kind="secondary"],
     .stButton button,
-    [data-testid="stButton"] button {
+    [data-testid="stButton"] button,
+    div[data-testid="stButton"] button[data-baseweb="button"],
+    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
+    div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"] {
         background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
         background-color: #2E86AB !important;
         color: white !important;
@@ -1244,10 +1247,7 @@ def main():
         show_landing_page()
         # Add version footer for landing page
         st.markdown("---")
-        st.markdown(
-            "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
-            unsafe_allow_html=True
-        )
+        st.markdown("**PeptiDIA v1.0**")
         return
     
     # Show selected mode interface
@@ -1260,10 +1260,7 @@ def main():
     
     # Add version footer at bottom of all pages
     st.markdown("---")
-    st.markdown(
-        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
-        unsafe_allow_html=True
-    )
+    st.markdown("**PeptiDIA v1.0**")
 
 def show_landing_page():
     """Display the landing page with mode selection."""
@@ -1293,7 +1290,7 @@ def show_landing_page():
         """, unsafe_allow_html=True)
         
         if st.button("⚙️ Configure Datasets", type="primary", use_container_width=True,
-                    help="Set up ground truth mapping for your datasets"):
+                    help="Set up ground truth mapping for your datasets", key="setup_btn"):
             # Clear all states when entering setup mode
             st.session_state.app_mode = 'setup'
             st.session_state.analysis_complete = False
@@ -1320,7 +1317,7 @@ def show_landing_page():
         """, unsafe_allow_html=True)
         
         if st.button("🧠 Start Training", type="primary", use_container_width=True, 
-                    help="Train new models on your peptide validation data"):
+                    help="Train new models on your peptide validation data", key="training_btn"):
             # Clear all states when entering training mode
             st.session_state.app_mode = 'training'
             st.session_state.analysis_complete = False
@@ -1347,7 +1344,7 @@ def show_landing_page():
         """, unsafe_allow_html=True)
         
         if st.button("🔮 Start Inference", type="primary", use_container_width=True,
-                    help="Use trained models to predict on new data"):
+                    help="Use trained models to predict on new data", key="inference_btn"):
             # Clear all states when entering inference mode
             st.session_state.app_mode = 'inference'
             st.session_state.analysis_complete = False
@@ -1435,19 +1432,6 @@ def show_training_interface():
         transform: translateX(0px) !important;
     }
     
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    .stButton > button[kind="primary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-right: -20px !important;
-    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -3412,19 +3396,6 @@ def show_inference_interface():
         transform: translateX(0px) !important;
     }
     
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    .stButton > button[kind="primary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-right: -20px !important;
-    }
     </style>
     """, unsafe_allow_html=True)
     
@@ -5287,19 +5258,6 @@ def show_setup_interface():
         transform: translateX(0px) !important;
     }
     
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    .stButton > button[kind="primary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-right: -20px !important;
-    }
     </style>
     """, unsafe_allow_html=True)
     
