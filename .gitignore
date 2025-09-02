@@ -29,6 +29,8 @@ saved_models/
 fdr_results/
 ultra_low_fdr_results/
 *.json
+# Exception: Allow ASTRAL dataset configuration
+!data/ASTRAL/dataset_info.json
 
 # Python cache
 __pycache__/
