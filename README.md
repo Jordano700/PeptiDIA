@@ -49,7 +49,11 @@ data/
 ### Step 3: Run PeptiDIA
 
 **Windows:**
-```batch
+```powershell
+# PowerShell (recommended)
+./start_peptidia.bat
+
+# Command Prompt (CMD)
 start_peptidia.bat
 ```
 

@@ -8,6 +8,10 @@ data/**/*.png
 data/**/*.jpg
 data/**/*.jpeg
 data/**/*.json
+
+# EXCEPTION: Allow ASTRAL dataset (public PRIDE data for demo purposes)
+!data/ASTRAL/**/*
+
 # Allow .gitkeep files to preserve folder structure
 !data/**/.gitkeep
 
