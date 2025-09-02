@@ -127,3 +127,6 @@ BibTeX format:
 
 - 🐛 Report issues on GitHub
 - 💡 Questions? Open an issue!
+
+---
+<sub>PeptiDIA v1.0</sub>

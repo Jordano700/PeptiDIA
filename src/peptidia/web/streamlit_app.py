@@ -5965,6 +5965,13 @@ def test_ground_truth_matching(dataset_name, config, training_methods):
         
     except Exception as e:
         st.error(f"Error testing configuration: {str(e)}")
+    
+    # Add footer with version at the bottom of the page
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()
