@@ -1242,6 +1242,12 @@ def main():
     # If no mode selected, show landing page
     if st.session_state.app_mode is None:
         show_landing_page()
+        # Add version footer for landing page
+        st.markdown("---")
+        st.markdown(
+            "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
+            unsafe_allow_html=True
+        )
         return
     
     # Show selected mode interface
@@ -1251,6 +1257,13 @@ def main():
         show_inference_interface()
     elif st.session_state.app_mode == 'setup':
         show_setup_interface()
+    
+    # Add version footer at bottom of all pages
+    st.markdown("---")
+    st.markdown(
+        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
+        unsafe_allow_html=True
+    )
 
 def show_landing_page():
     """Display the landing page with mode selection."""
