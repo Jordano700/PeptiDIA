@@ -204,27 +204,22 @@ st.markdown("""
         background-color: #f8f9fa;
     }
     
-    /* Button styling - Updated for Streamlit 1.45+ with cache-busting timestamp */
-    /* Cache-bust: 1725285600000 */
-    .stButton > button,
-    div[data-testid="stButton"] > button,
-    button[data-testid="baseButton-primary"],
-    button[data-testid="baseButton-secondary"],
-    button[kind="primary"],
-    button[kind="secondary"],
-    .stButton button,
-    [data-testid="stButton"] button,
-    div[data-testid="stButton"] button[data-baseweb="button"],
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"] {
+    /* Landing page button styling only (avoid global overrides) */
+    button[key="setup_btn"],
+    button[key="training_btn"],
+    button[key="inference_btn"] {
         background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
         background-color: #2E86AB !important;
+        background-image: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
         color: white !important;
         border: none !important;
         border-radius: 8px !important;
         padding: 0.5rem 1rem !important;
         font-weight: 500 !important;
         transition: all 0.3s ease !important;
+        /* Force override any conflicting styles */
+        box-shadow: none !important;
+        text-shadow: none !important;
     }
     
     /* Multiselect button styling - for FDR level buttons */
@@ -241,10 +236,9 @@ st.markdown("""
         font-weight: 500 !important;
     }
     
-    .stButton > button:hover,
-    div[data-testid="stButton"] > button:hover,
-    button[data-testid="baseButton-primary"]:hover,
-    button[data-testid="baseButton-secondary"]:hover {
+    button[key="setup_btn"]:hover,
+    button[key="training_btn"]:hover,
+    button[key="inference_btn"]:hover {
         transform: translateY(-2px) !important;
         box-shadow: 0 4px 12px rgba(46, 134, 171, 0.3) !important;
         background: linear-gradient(90deg, #2E86AB 0%, #6366F1 100%) !important;
@@ -1267,7 +1261,27 @@ def show_landing_page():
     st.markdown("## 🚀 Choose Your Workflow")
     st.markdown("Select how you want to use PeptiDIA:")
     
+    # Landing-page-specific CSS to guarantee identical button appearance
+    st.markdown("""
+    <style>
+    .landing-buttons .stButton > button,
+    .landing-buttons div[data-testid="stButton"] > button {
+        height: 56px !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        border-radius: 10px !important;
+        padding: 0.75rem 1.25rem !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.5rem !important;
+        white-space: nowrap !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # Create three large buttons for mode selection with uniform sizing
+    st.markdown('<div class="landing-buttons">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3, gap="large")
     
     with col1:
@@ -1354,6 +1368,9 @@ def show_landing_page():
             st.session_state.inference_results = None
             st.rerun()
     
+    # Close landing buttons wrapper
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     # Additional information section
     st.markdown("---")
     st.markdown("### 📊 Supported Datasets")
@@ -1418,7 +1435,9 @@ def show_training_interface():
     <style>
     /* Force refresh with timestamp and stronger selectors */
     div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
-    .stButton > button[kind="secondary"] {
+    .stButton > button[kind="secondary"],
+    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
+    .stButton > button[kind="primary"] {
         background: #2E86AB !important;
         color: white !important;
         border: none !important;
@@ -3382,7 +3401,9 @@ def show_inference_interface():
     <style>
     /* Force refresh with timestamp and stronger selectors */
     div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
-    .stButton > button[kind="secondary"] {
+    .stButton > button[kind="secondary"],
+    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
+    .stButton > button[kind="primary"] {
         background: #2E86AB !important;
         color: white !important;
         border: none !important;
