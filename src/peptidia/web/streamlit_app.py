@@ -26,7 +26,6 @@ import json
 from pathlib import Path
 from datetime import datetime
 import sys
-import warnings
 import time
 
 # Add the project root to Python path for imports
@@ -40,7 +39,36 @@ from src.peptidia.core.dataset_utils import discover_available_files_by_dataset,
 # Import functions are now available locally in peptide_validator_api.py
 # No need for external scripts directory
 
-warnings.filterwarnings('ignore')
+def inject_big_button_css():
+    """Inject consistent large button styling used across modes.
+
+    Centralizes the repeated CSS blocks so style stays identical while
+    avoiding duplication in the code.
+    """
+    st.markdown(
+        """
+        <style>
+        /* Large primary/secondary action buttons */
+        div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
+        .stButton > button[kind="secondary"],
+        div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
+        .stButton > button[kind="primary"] {
+            background: #2E86AB !important;
+            color: white !important;
+            border: none !important;
+            height: 80px !important;
+            font-size: 22px !important;
+            font-weight: 700 !important;
+            border-radius: 15px !important;
+            padding: 20px 30px !important;
+            width: 100% !important;
+            margin-left: 0px !important;
+            transform: translateX(0px) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # Page configuration
 st.set_page_config(
@@ -525,6 +553,219 @@ def export_history_to_csv(run_history):
         })
     
     return pd.DataFrame(export_data)
+
+
+# ---------------------------------------------------------------
+# 🔽 Helper: Build filtered DIA-NN CSV (baseline + ML additional)
+# ---------------------------------------------------------------
+def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = None) -> pd.DataFrame:
+    """Return DIA‑NN rows filtered to Baseline 1% + ML-selected additional peptides.
+
+    If `trained_model` and `feature_names` are missing in `results`, tries to
+    load them from the run's results directory (saved_models/*joblib).
+    """
+    if not results or 'config' not in results:
+        raise ValueError("No results/config available to build filtered DIA-NN CSV")
+
+    # Resolve result item and threshold
+    item = None
+    try:
+        if target_fdr is not None:
+            item = next((r for r in results.get('results', []) if float(r.get('Target_FDR')) == float(target_fdr)), None)
+    except Exception:
+        item = None
+    if item is None and results.get('results'):
+        # Fallback to max Additional_Peptides
+        try:
+            item = max(results['results'], key=lambda x: int(x.get('Additional_Peptides', 0)))
+        except Exception:
+            item = results['results'][0]
+    if not item:
+        raise ValueError("Could not determine threshold/result item")
+
+    threshold = float(item.get('Threshold', 0.5))
+    cfg = results.get('config', {})
+    test_method = cfg.get('test_method')
+    test_fdr = int(cfg.get('test_fdr', 50))
+    aggregation_method = results.get('summary', {}).get('aggregation_method', cfg.get('aggregation_method', 'max'))
+    if not test_method:
+        raise ValueError("Missing test_method in results config")
+
+    # Prepare API with same feature selection
+    api = PeptideValidatorAPI()
+    api.feature_selection = cfg.get('feature_selection', {
+        'use_diann_quality': True,
+        'use_sequence_features': True,
+        'use_ms_features': True,
+        'use_statistical_features': True,
+        'use_library_features': True,
+        'excluded_features': []
+    })
+
+    # 1) Load baseline set
+    baseline_peptides = api._load_baseline_peptides(test_method)
+
+    # 2) Candidates (exclude baseline)
+    additional_rows, y_test, _ = api._load_test_data(test_method, test_fdr, baseline_peptides, set())
+
+    # 3) Ensure we have model + training features
+    training_features = results.get('feature_names')
+    trained_model = results.get('trained_model')
+    if training_features is None or trained_model is None:
+        # Try to load from saved_models
+        results_dir = results.get('summary', {}).get('results_dir', '')
+        models_dir = os.path.join(results_dir, 'saved_models') if results_dir else ''
+        try:
+            import joblib
+            if models_dir and os.path.isdir(models_dir):
+                tm_path = os.path.join(models_dir, 'trained_model.joblib')
+                tf_path = os.path.join(models_dir, 'training_features.joblib')
+                if os.path.exists(tm_path) and os.path.exists(tf_path):
+                    trained_model = joblib.load(tm_path)
+                    training_features = joblib.load(tf_path)
+                    if not isinstance(training_features, list) and hasattr(training_features, 'tolist'):
+                        training_features = training_features.tolist()
+        except Exception:
+            pass
+    if training_features is None or trained_model is None:
+        raise ValueError("Missing trained model or training feature list to rebuild predictions")
+
+    # 4) Recompute peptide-level predictions and select by threshold
+    X_test = api._make_advanced_features(additional_rows, training_features)
+    probs = trained_model.predict_proba(X_test)[:, 1]
+    seq_col = 'Modified.Sequence' if 'Modified.Sequence' in additional_rows.columns else 'Stripped.Sequence'
+    peptide_data, peptide_predictions, _ = api._aggregate_predictions_by_peptide(additional_rows, probs, y_test, aggregation_method)
+    selected_mask = peptide_predictions >= threshold
+    selected_additional = set(peptide_data.loc[selected_mask, seq_col].astype(str).values)
+
+    # 5) Load original DIA-NN test files to filter
+    test_files = get_files_for_configured_method(test_method, test_fdr)
+    if not test_files:
+        raise ValueError(f"No DIA-NN files found for {test_method} at FDR {test_fdr}")
+
+    frames = []
+    for fp in sorted(test_files):
+        try:
+            frames.append(pd.read_parquet(fp))
+        except Exception:
+            try:
+                if fp.endswith('.csv'):
+                    frames.append(pd.read_csv(fp))
+                elif fp.endswith('.tsv'):
+                    frames.append(pd.read_csv(fp, sep='\t'))
+            except Exception:
+                continue
+    if not frames:
+        raise ValueError("Unable to load test DIA-NN data for filtering")
+
+    full_df = pd.concat(frames, ignore_index=True)
+    seq_col_full = 'Modified.Sequence' if 'Modified.Sequence' in full_df.columns else 'Stripped.Sequence'
+
+    combined_peptides = set(map(str, baseline_peptides)) | set(map(str, selected_additional))
+    mask = full_df[seq_col_full].astype(str).isin(combined_peptides)
+    filtered_df = full_df.loc[mask].copy()
+
+    # Indicator columns
+    try:
+        filtered_df['Is_Baseline'] = filtered_df[seq_col_full].astype(str).isin(set(map(str, baseline_peptides)))
+        filtered_df['Is_ML'] = filtered_df[seq_col_full].astype(str).isin(set(map(str, selected_additional)))
+    except Exception:
+        pass
+
+    return filtered_df
+
+
+def display_diann_filtered_export(results):
+    """Minimal UI: one control to choose FDR and one Excel export (Results + Metadata)."""
+    st.markdown("### 🧪 DIA-NN Filtered Export")
+
+    # FDR options from results
+    targets = []
+    if 'results' in results and results['results']:
+        try:
+            targets = sorted({float(r.get('Target_FDR')) for r in results['results']})
+        except Exception:
+            targets = []
+
+    # Default to 'best' if we can
+    best = extract_summary_metrics(results) or {}
+    default_idx = 0
+    if targets and 'best_fdr' in best and best['best_fdr'] in targets:
+        default_idx = targets.index(best['best_fdr'])
+
+    selection = st.selectbox(
+        "Target FDR for additional peptides",
+        [f"{t:.1f}" for t in targets] if targets else ["5.0"],
+        index=default_idx if targets else 0,
+        help="Exports baseline 1% + ML-selected additional peptides at this FDR"
+    )
+
+    def _build_metadata_df(selected_fdr: float):
+        rows = []
+        cfg = results.get('config', {})
+        summ = results.get('summary', {})
+        rows.extend([
+            ("PeptiDIA", "v1.0"),
+            ("Exported", datetime.now().isoformat()),
+            ("Selected Target FDR", selected_fdr),
+            ("Train Methods", ", ".join(cfg.get('train_methods', []))),
+            ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+            ("Test Method", cfg.get('test_method')),
+            ("Test FDR", cfg.get('test_fdr')),
+            ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+            ("Aggregation Method", cfg.get('aggregation_method', 'max')),
+        ])
+        xgb = cfg.get('xgb_params', {}) or {}
+        for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
+            if k in xgb:
+                rows.append((f"xgb.{k}", xgb[k]))
+        fs = cfg.get('feature_selection', {}) or {}
+        for k, v in fs.items():
+            if isinstance(v, (str, int, float, bool)):
+                rows.append((f"feature_selection.{k}", v))
+        for k in [
+            "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
+            "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
+        ]:
+            if k in summ:
+                rows.append((f"summary.{k}", summ[k]))
+        try:
+            for item in results.get('results', []):
+                if float(item.get('Target_FDR')) == float(selected_fdr):
+                    for key, prefix in [("Threshold", "threshold"), ("Additional_Peptides", "additional_peptides"), ("Actual_FDR", "actual_fdr")]:
+                        if key in item:
+                            rows.append((f"{prefix}@{selected_fdr}%", item[key]))
+                    break
+        except Exception:
+            pass
+        import pandas as _pd
+        return _pd.DataFrame(rows, columns=["Key", "Value"])
+
+    if st.button("⬇️ Download Combined Export (.xlsx)", type="primary"):
+        try:
+            import io
+            import pandas as _pd
+            tfdr = float(selection)
+            filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
+            if 'Is_Baseline' not in filtered_df.columns:
+                filtered_df['Is_Baseline'] = False
+            if 'Is_ML' not in filtered_df.columns:
+                filtered_df['Is_ML'] = ~filtered_df['Is_Baseline']
+            buffer = io.BytesIO()
+            try:
+                with _pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                    filtered_df.to_excel(writer, index=False, sheet_name="Results")
+                    _build_metadata_df(tfdr).to_excel(writer, index=False, sheet_name="Metadata")
+                st.download_button(
+                    label=f"Save diann_export_{tfdr:.1f}FDR.xlsx",
+                    data=buffer.getvalue(),
+                    file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            except Exception:
+                st.info("Excel engine not available. Please install openpyxl to enable Excel export.")
+        except Exception:
+            st.info("Provide trained model and feature list in results (or a run with saved_models) to enable export. Try rerunning the analysis in this session.")
 
 def init_session_state():
     """Initialize session state variables efficiently."""
@@ -1430,29 +1671,8 @@ def show_training_interface():
     # Header with symmetric alignment to blue header rectangle
     col1, col2, col3 = st.columns([1, 3, 1])
     
-    # Add global CSS for button styling with stronger selectors
-    st.markdown("""
-    <style>
-    /* Force refresh with timestamp and stronger selectors */
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
-    .stButton > button[kind="secondary"],
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    .stButton > button[kind="primary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-left: 0px !important;
-        transform: translateX(0px) !important;
-    }
-    
-    </style>
-    """, unsafe_allow_html=True)
+    # Consistent large button styling
+    inject_big_button_css()
     
     with col1:
         if st.button("← Back to Home", type="secondary", key="big_back_btn"):
@@ -1956,13 +2176,19 @@ def show_training_interface():
             try:
                 if os.path.exists(path):
                     # Use HTML to properly display animated GIF
-                    st.markdown(f"""
-                    <div style='text-align: center; margin: 20px 0;'>
-                        <img src="data:image/gif;base64,{__import__('base64').b64encode(open(path, 'rb').read()).decode()}" 
-                             width="300" style="border-radius: 10px;">
-                        <p style='color: #2E86AB; font-weight: 500; margin-top: 10px;'>Processing your peptide data...</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    from pathlib import Path as _Path
+                    import base64 as _b64
+                    _gif_b64 = _b64.b64encode(_Path(path).read_bytes()).decode()
+                    st.markdown(
+                        f"""
+                        <div style='text-align: center; margin: 20px 0;'>
+                            <img src=\"data:image/gif;base64,{_gif_b64}\" 
+                                 width=\"300\" style=\"border-radius: 10px;\"> 
+                            <p style='color: #2E86AB; font-weight: 500; margin-top: 10px;'>Processing your peptide data...</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
                     gif_loaded = True
                     break
             except:
@@ -2042,7 +2268,7 @@ def show_training_interface():
         @contextlib.contextmanager
         def suppress_verbose_output():
             """Suppress verbose stdout output during analysis."""
-            import warnings
+# (Removed duplicate warnings import)
             import os
             original_stdout = sys.stdout
             
@@ -3035,7 +3261,7 @@ def display_results():
             st.info("No results directory found – cannot display feature importance plots.")
     
     with tab5:
-        display_export_options(results)
+        display_diann_filtered_export(results)
     
     # Reset button
     st.markdown("---")
@@ -3312,11 +3538,61 @@ def display_export_options(results):
         }
         json_data = json.dumps(summary_data, indent=2, default=str)
         st.download_button(
-            label="📋 Download Full Summary",
+            label="📋 Download Full Summary (JSON)",
             data=json_data,
             file_name=f"analysis_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json"
         )
+
+        # Also offer a flat CSV summary (Key,Value)
+        try:
+            rows = []
+            cfg = results.get('config', {})
+            summ = results.get('summary', {})
+            best = extract_summary_metrics(results) or {}
+            rows.extend([
+                ("Train Methods", ", ".join(cfg.get('train_methods', []))),
+                ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+                ("Test Method", cfg.get('test_method')),
+                ("Test FDR", cfg.get('test_fdr')),
+                ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+                ("Aggregation Method", cfg.get('aggregation_method', 'max')),
+            ])
+            xgb = cfg.get('xgb_params', {}) or {}
+            for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
+                if k in xgb:
+                    rows.append((f"xgb.{k}", xgb[k]))
+            fs = cfg.get('feature_selection', {}) or {}
+            for k, v in fs.items():
+                if isinstance(v, (str, int, float, bool)):
+                    rows.append((f"feature_selection.{k}", v))
+            for k in [
+                "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
+                "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
+            ]:
+                if k in summ:
+                    rows.append((f"summary.{k}", summ[k]))
+            for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
+                if bk in best:
+                    rows.append((f"best.{bk}", best[bk]))
+            # Per-target thresholds and metrics
+            for item in results.get('results', []):
+                tfdr = item.get('Target_FDR')
+                if tfdr is None:
+                    continue
+                for key, prefix in [("Threshold", "threshold"), ("Additional_Peptides", "additional_peptides"), ("Actual_FDR", "actual_fdr")]:
+                    if key in item:
+                        rows.append((f"{prefix}@{tfdr}%", item[key]))
+            import pandas as _pd
+            summary_df = _pd.DataFrame(rows, columns=["Key", "Value"])
+            st.download_button(
+                label="🧾 Download Full Summary (CSV)",
+                data=summary_df.to_csv(index=False),
+                file_name=f"analysis_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        except Exception:
+            pass
     
     with col3:
         # Export configuration for sharing
@@ -3328,6 +3604,81 @@ def display_export_options(results):
             file_name=f"analysis_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json"
         )
+
+    # DIA-NN filtered export with baseline + ML additional peptides
+    st.markdown("### 🧪 DIA-NN Filtered Export")
+    try:
+        brand_diann = st.checkbox(
+            "✨ Brand CSV header (PeptiDIA v1.0, timestamp, config)",
+            value=True,
+            help="Adds a commented header block above the CSV data."
+        )
+        export_format = st.radio(
+            "Format",
+            ["CSV (.csv)", "Excel (.xlsx)"],
+            index=0,
+            horizontal=True,
+            help="Excel export contains two sheets: Results and Metadata"
+        )
+
+        targets = []
+        if 'results' in results and results['results']:
+            try:
+                targets = sorted({float(r.get('Target_FDR')) for r in results['results']})
+            except Exception:
+                targets = []
+        # Single-FDR CSV export: let user pick exactly one FDR
+        selection = st.selectbox("Target FDR for DIA-NN export", [f"{t:.1f}" for t in targets], help="Choose the FDR for ML-selected peptides")
+
+        def _build_metadata_df():
+            rows = []
+            cfg = results.get('config', {})
+            summ = results.get('summary', {})
+            best = extract_summary_metrics(results) or {}
+            rows.extend([
+                ("Train Methods", ", ".join(cfg.get('train_methods', []))),
+                ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+                ("Test Method", cfg.get('test_method')),
+                ("Test FDR", cfg.get('test_fdr')),
+                ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+                ("Aggregation Method", cfg.get('aggregation_method', 'max')),
+                ("Exported", datetime.now().isoformat()),
+                ("PeptiDIA", "v1.0"),
+            ])
+            xgb = cfg.get('xgb_params', {}) or {}
+            for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
+                if k in xgb:
+                    rows.append((f"xgb.{k}", xgb[k]))
+            fs = cfg.get('feature_selection', {}) or {}
+            for k, v in fs.items():
+                if isinstance(v, (str, int, float, bool)):
+                    rows.append((f"feature_selection.{k}", v))
+            for k in [
+                "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
+                "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
+            ]:
+                if k in summ:
+                    rows.append((f"summary.{k}", summ[k]))
+            for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
+                if bk in best:
+                    rows.append((f"best.{bk}", best[bk]))
+            import pandas as _pd
+            return _pd.DataFrame(rows, columns=["Key", "Value"])
+
+        try:
+            tfdr = float(selection)
+            filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
+            csv_data = filtered_df.to_csv(index=False)
+            st.download_button(
+                label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                data=csv_data,
+                file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        except Exception:
+            st.info("Provide trained model and feature list in results to enable DIA-NN export.")
+    except Exception:
+        pass
     
     st.markdown("### 📊 Analysis Files")
     
@@ -3396,29 +3747,8 @@ def show_inference_interface():
     # Add mode indicator and back button (same layout as training)
     col1, col2, col3 = st.columns([1, 3, 1])
     
-    # Add global CSS for button styling (same as training)
-    st.markdown("""
-    <style>
-    /* Force refresh with timestamp and stronger selectors */
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
-    .stButton > button[kind="secondary"],
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="primary"],
-    .stButton > button[kind="primary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-left: 0px !important;
-        transform: translateX(0px) !important;
-    }
-    
-    </style>
-    """, unsafe_allow_html=True)
+    # Consistent large button styling
+    inject_big_button_css()
     
     with col1:
         if st.button("← Back to Home", type="secondary", key="big_back_btn_inference"):
@@ -3625,7 +3955,7 @@ def show_inference_interface():
                     display_inference_table_only(results_df)
                 
                 with tab4:
-                    display_export_options(st.session_state.inference_results)
+                    display_diann_filtered_export(st.session_state.inference_results)
             else:
                 # This is raw results from the old inference flow
                 display_inference_results_with_tabs()
@@ -4998,7 +5328,7 @@ def display_inference_results_with_tabs():
         display_inference_table_only(results_df)
     
     with tab4:
-        display_export_options(results)
+        display_diann_filtered_export(results)
 
 def load_baseline_peptides_inference(test_method=None):
     """Load baseline peptides for inference (matching method FDR_1)."""
@@ -5261,26 +5591,8 @@ def show_setup_interface():
     # Header with navigation (matching training mode style)
     col1, col2, col3 = st.columns([1, 3, 1])
     
-    # Custom CSS for consistent button styling
-    st.markdown("""
-    <style>
-    div[data-testid="stButton"] button[data-baseweb="button"][kind="secondary"],
-    .stButton > button[kind="secondary"] {
-        background: #2E86AB !important;
-        color: white !important;
-        border: none !important;
-        height: 80px !important;
-        font-size: 22px !important;
-        font-weight: 700 !important;
-        border-radius: 15px !important;
-        padding: 20px 30px !important;
-        width: 100% !important;
-        margin-left: 0px !important;
-        transform: translateX(0px) !important;
-    }
-    
-    </style>
-    """, unsafe_allow_html=True)
+    # Consistent large button styling
+    inject_big_button_css()
     
     with col1:
         if st.button("← Back to Home", type="primary", key="setup_back_btn_1"):
