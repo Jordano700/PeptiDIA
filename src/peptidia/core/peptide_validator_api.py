@@ -679,8 +679,12 @@ class PeptideValidatorAPI:
         }
     
     def _make_advanced_features(self, df: pd.DataFrame, training_features=None) -> pd.DataFrame:
-        """Create comprehensive feature table with advanced engineering."""
-        feats = pd.DataFrame(index=df.index)
+        """Create comprehensive feature table with advanced engineering.
+
+        Optimized to avoid DataFrame fragmentation by assembling features in a
+        dictionary and constructing the DataFrame once.
+        """
+        feat_map: Dict[str, pd.Series] = {}
         
         # Add numeric features based on feature selection
         diann_quality_cols = ['GG.Q.Value', 'PEP', 'PG.PEP', 'PG.Q.Value', 'Q.Value', 'Global.Q.Value',
@@ -721,30 +725,33 @@ class PeptideValidatorAPI:
                     include_feature = False
                 
                 if include_feature:
-                    feats[col] = pd.to_numeric(df[col], errors='coerce')
+                    feat_map[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Add engineered log features
         for col in self.engineer_log:
             if col in df.columns:
                 vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                feats[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
+                feat_map[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
         
         # Add ratio features
         for col1, col2 in self.engineer_ratios:
             if col1 in df.columns and col2 in df.columns:
                 vals1 = pd.to_numeric(df[col1], errors='coerce').fillna(0)
                 vals2 = pd.to_numeric(df[col2], errors='coerce').fillna(1)
-                feats[f'ratio_{col1}_{col2}'] = vals1 / np.maximum(vals2, 1e-10)
+                feat_map[f'ratio_{col1}_{col2}'] = vals1 / np.maximum(vals2, 1e-10)
         
         # Add sequence-based features
         if self.feature_selection.get('use_sequence_features', True) and 'Stripped.Sequence' in df.columns:
             sequences = df['Stripped.Sequence'].astype(str)
-            feats['sequence_length'] = sequences.str.len()
+            seq_len = sequences.str.len()
+            feat_map['sequence_length'] = seq_len
             
             # Amino acid composition features - ALL 20 amino acids
             for aa in ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']:
-                feats[f'aa_count_{aa}'] = sequences.str.count(aa)
-                feats[f'aa_freq_{aa}'] = feats[f'aa_count_{aa}'] / feats['sequence_length']
+                counts = sequences.str.count(aa)
+                feat_map[f'aa_count_{aa}'] = counts
+                # Avoid divide-by-zero; handled by fillna later
+                feat_map[f'aa_freq_{aa}'] = counts / seq_len.replace(0, np.nan)
         
         # Skip source_fdr feature to prevent data leakage
         # if 'source_fdr' in df.columns:
@@ -755,9 +762,11 @@ class PeptideValidatorAPI:
             for col in ['Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity']:
                 if col in df.columns:
                     vals = pd.to_numeric(df[col], errors='coerce')
-                    feats[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
+                    feat_map[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
         
         # Ensure consistent columns with training data
+        # Build DataFrame once to avoid fragmentation
+        feats = pd.DataFrame(feat_map, index=df.index)
         if training_features is not None:
             for col in training_features:
                 if col not in feats.columns:

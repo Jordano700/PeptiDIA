@@ -423,7 +423,8 @@ def validate_ground_truth_files(method_name: str) -> bool:
                 try:
                     df = pd.read_parquet(file_path)
                     if len(df) == 0:
-                        print(f"Warning: Empty ground truth file for method {method_name} (sample {sample_id})")
+                        if not os.environ.get('PEPTIDIA_SILENCE_DATA_WARNINGS'):
+                            print(f"Warning: Empty ground truth file for method {method_name} (sample {sample_id})")
                         return False
                 except Exception as e:
                     print(f"Warning: Error reading ground truth file for method {method_name}: {e}")
@@ -433,5 +434,6 @@ def validate_ground_truth_files(method_name: str) -> bool:
         return True
         
     except Exception as e:
-        print(f"Warning: Error validating ground truth for method {method_name}: {e}")
+        if not os.environ.get('PEPTIDIA_SILENCE_DATA_WARNINGS'):
+            print(f"Warning: Error validating ground truth for method {method_name}: {e}")
         return True  # Default to valid on error
