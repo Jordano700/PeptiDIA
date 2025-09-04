@@ -94,7 +94,13 @@ class PeptideValidatorAPI:
         ]
     
     def _detect_gpu_device(self) -> str:
-        """Detect if GPU is available, fallback to CPU."""
+        """Detect if GPU is available, fallback to CPU.
+
+        Honours environment override: set PEPTIDIA_FORCE_CPU=1 to disable GPU.
+        """
+        import os as _os
+        if str(_os.environ.get('PEPTIDIA_FORCE_CPU', '')).lower() in ('1', 'true', 'yes', 'y'):
+            return 'cpu'
         try:
             import xgboost as xgb
             # Try to create a simple XGBoost model with GPU

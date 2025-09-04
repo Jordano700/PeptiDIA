@@ -21,5 +21,5 @@ then
 	"$PYTHON" -m pip install -r "config/requirements.txt"
 fi
 
-# Run CLI
-"$PYTHON" scripts/peptidia_cli.py
+# Run modern CLI (package module under src)
+"$PYTHON" -m src.peptidia.cli.peptidia_cli
