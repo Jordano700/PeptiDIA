@@ -564,6 +564,8 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     If `trained_model` and `feature_names` are missing in `results`, tries to
     load them from the run's results directory (saved_models/*joblib).
     """
+    # Local import to avoid NameError and heavy imports at module load time
+    from src.peptidia.core.peptide_validator_api import PeptideValidatorAPI
     if not results or 'config' not in results:
         raise ValueError("No results/config available to build filtered DIA-NN CSV")
 
@@ -608,11 +610,26 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     # 2) Candidates (exclude baseline)
     additional_rows, y_test, _ = api._load_test_data(test_method, test_fdr, baseline_peptides, set())
 
-    # 3) Ensure we have model + training features
+    # 3) If available, use precomputed selected sequences from results to avoid re-prediction
+    selected_sequences = None
+    try:
+        # Prefer explicit map if present
+        seq_map = results.get('selected_sequences_by_fdr')
+        if seq_map and target_fdr is not None:
+            # Keys may be str or float
+            selected_sequences = seq_map.get(float(target_fdr)) or seq_map.get(str(target_fdr))
+        if not selected_sequences and 'Selected_Sequences' in item:
+            selected_sequences = item.get('Selected_Sequences')
+        if selected_sequences is not None and len(selected_sequences) == 0:
+            selected_sequences = None
+    except Exception:
+        selected_sequences = None
+
+    # 3b) Ensure we have model + training features if we need to recompute selections
     training_features = results.get('feature_names')
     trained_model = results.get('trained_model')
-    if training_features is None or trained_model is None:
-        # Try to load from saved_models
+    if selected_sequences is None and (training_features is None or trained_model is None):
+        # Try to load from saved_models within this run's results dir first
         results_dir = results.get('summary', {}).get('results_dir', '')
         models_dir = os.path.join(results_dir, 'saved_models') if results_dir else ''
         try:
@@ -627,16 +644,46 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
                         training_features = training_features.tolist()
         except Exception:
             pass
-    if training_features is None or trained_model is None:
+
+    if selected_sequences is None and (training_features is None or trained_model is None):
+        # Fallback: look in Streamlit's saved_models directory for the most recent model
+        try:
+            import glob as _glob
+            import joblib
+            saved_root = os.path.join(os.path.dirname(__file__), 'saved_models')
+            candidates = sorted(
+                _glob.glob(os.path.join(saved_root, '*', 'trained_model.joblib')),
+                key=os.path.getmtime,
+                reverse=True
+            )
+            for tm_path in candidates:
+                base_dir = os.path.dirname(tm_path)
+                tf_path = os.path.join(base_dir, 'training_features.joblib')
+                if os.path.exists(tf_path):
+                    try:
+                        trained_model = joblib.load(tm_path)
+                        training_features = joblib.load(tf_path)
+                        if not isinstance(training_features, list) and hasattr(training_features, 'tolist'):
+                            training_features = training_features.tolist()
+                        break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+    if selected_sequences is None and (training_features is None or trained_model is None):
         raise ValueError("Missing trained model or training feature list to rebuild predictions")
 
-    # 4) Recompute peptide-level predictions and select by threshold
-    X_test = api._make_advanced_features(additional_rows, training_features)
-    probs = trained_model.predict_proba(X_test)[:, 1]
+    # 4) Determine selected sequences
     seq_col = 'Modified.Sequence' if 'Modified.Sequence' in additional_rows.columns else 'Stripped.Sequence'
-    peptide_data, peptide_predictions, _ = api._aggregate_predictions_by_peptide(additional_rows, probs, y_test, aggregation_method)
-    selected_mask = peptide_predictions >= threshold
-    selected_additional = set(peptide_data.loc[selected_mask, seq_col].astype(str).values)
+    if selected_sequences is None:
+        # Recompute peptide-level predictions and select by threshold
+        X_test = api._make_advanced_features(additional_rows, training_features)
+        probs = trained_model.predict_proba(X_test)[:, 1]
+        peptide_data, peptide_predictions, _ = api._aggregate_predictions_by_peptide(additional_rows, probs, y_test, aggregation_method)
+        selected_mask = peptide_predictions >= threshold
+        selected_additional = set(peptide_data.loc[selected_mask, seq_col].astype(str).values)
+    else:
+        selected_additional = set(map(str, selected_sequences))
 
     # 5) Load original DIA-NN test files to filter
     test_files = get_files_for_configured_method(test_method, test_fdr)
@@ -3261,7 +3308,8 @@ def display_results():
             st.info("No results directory found – cannot display feature importance plots.")
     
     with tab5:
-        display_diann_filtered_export(results)
+        # Use the richer export panel with CSV/JSON/config plus DIA-NN export
+        display_export_options(results)
     
     # Reset button
     st.markdown("---")
@@ -3605,80 +3653,121 @@ def display_export_options(results):
             mime="application/json"
         )
 
-    # DIA-NN filtered export with baseline + ML additional peptides
-    st.markdown("### 🧪 DIA-NN Filtered Export")
-    try:
-        brand_diann = st.checkbox(
-            "✨ Brand CSV header (PeptiDIA v1.0, timestamp, config)",
-            value=True,
-            help="Adds a commented header block above the CSV data."
-        )
-        export_format = st.radio(
-            "Format",
-            ["CSV (.csv)", "Excel (.xlsx)"],
-            index=0,
-            horizontal=True,
-            help="Excel export contains two sheets: Results and Metadata"
-        )
+    # DIA-NN filtered export (only in inference mode)
+    is_inference_mode = (
+        (results.get('summary', {}) or {}).get('inference_mode')
+        or (results.get('metadata', {}) or {}).get('inference_mode')
+        or (results.get('config', {}) or {}).get('model_source') == 'inference'
+    )
 
-        targets = []
-        if 'results' in results and results['results']:
-            try:
-                targets = sorted({float(r.get('Target_FDR')) for r in results['results']})
-            except Exception:
-                targets = []
-        # Single-FDR CSV export: let user pick exactly one FDR
-        selection = st.selectbox("Target FDR for DIA-NN export", [f"{t:.1f}" for t in targets], help="Choose the FDR for ML-selected peptides")
-
-        def _build_metadata_df():
-            rows = []
-            cfg = results.get('config', {})
-            summ = results.get('summary', {})
-            best = extract_summary_metrics(results) or {}
-            rows.extend([
-                ("Train Methods", ", ".join(cfg.get('train_methods', []))),
-                ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
-                ("Test Method", cfg.get('test_method')),
-                ("Test FDR", cfg.get('test_fdr')),
-                ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
-                ("Aggregation Method", cfg.get('aggregation_method', 'max')),
-                ("Exported", datetime.now().isoformat()),
-                ("PeptiDIA", "v1.0"),
-            ])
-            xgb = cfg.get('xgb_params', {}) or {}
-            for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
-                if k in xgb:
-                    rows.append((f"xgb.{k}", xgb[k]))
-            fs = cfg.get('feature_selection', {}) or {}
-            for k, v in fs.items():
-                if isinstance(v, (str, int, float, bool)):
-                    rows.append((f"feature_selection.{k}", v))
-            for k in [
-                "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
-                "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
-            ]:
-                if k in summ:
-                    rows.append((f"summary.{k}", summ[k]))
-            for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
-                if bk in best:
-                    rows.append((f"best.{bk}", best[bk]))
-            import pandas as _pd
-            return _pd.DataFrame(rows, columns=["Key", "Value"])
-
+    if is_inference_mode:
+        st.markdown("### 🧪 DIA-NN Filtered Export")
         try:
-            tfdr = float(selection)
-            filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
-            csv_data = filtered_df.to_csv(index=False)
-            st.download_button(
-                label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
-                data=csv_data,
-                file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+            brand_diann = st.checkbox(
+                "✨ Brand CSV header (PeptiDIA v1.0, timestamp, config)",
+                value=True,
+                help="Adds a commented header block above the CSV data."
             )
+            export_format = st.radio(
+                "Format",
+                ["CSV (.csv)", "Excel (.xlsx)"],
+                index=0,
+                horizontal=True,
+                help="Excel export contains two sheets: Results and Metadata"
+            )
+
+            targets = []
+            if 'results' in results and results['results']:
+                try:
+                    targets = sorted({float(r.get('Target_FDR')) for r in results['results']})
+                except Exception:
+                    targets = []
+            # Single-FDR CSV export: let user pick exactly one FDR
+            selection = st.selectbox("Target FDR for DIA-NN export", [f"{t:.1f}" for t in targets], help="Choose the FDR for ML-selected peptides")
+
+            def _build_metadata_df():
+                rows = []
+                cfg = results.get('config', {})
+                summ = results.get('summary', {})
+                best = extract_summary_metrics(results) or {}
+                rows.extend([
+                    ("Train Methods", ", ".join(cfg.get('train_methods', []))),
+                    ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+                    ("Test Method", cfg.get('test_method')),
+                    ("Test FDR", cfg.get('test_fdr')),
+                    ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+                    ("Aggregation Method", cfg.get('aggregation_method', 'max')),
+                    ("Exported", datetime.now().isoformat()),
+                    ("PeptiDIA", "v1.0"),
+                ])
+                xgb = cfg.get('xgb_params', {}) or {}
+                for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
+                    if k in xgb:
+                        rows.append((f"xgb.{k}", xgb[k]))
+                fs = cfg.get('feature_selection', {}) or {}
+                for k, v in fs.items():
+                    if isinstance(v, (str, int, float, bool)):
+                        rows.append((f"feature_selection.{k}", v))
+                for k in [
+                    "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
+                    "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
+                ]:
+                    if k in summ:
+                        rows.append((f"summary.{k}", summ[k]))
+                for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
+                    if bk in best:
+                        rows.append((f"best.{bk}", best[bk]))
+                import pandas as _pd
+                return _pd.DataFrame(rows, columns=["Key", "Value"])
+
+            try:
+                tfdr = float(selection)
+                filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
+
+                if export_format == "Excel (.xlsx)":
+                    try:
+                        import io
+                        import pandas as _pd
+                        buffer = io.BytesIO()
+                        with _pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                            filtered_df.to_excel(writer, index=False, sheet_name="Results")
+                            _build_metadata_df().to_excel(writer, index=False, sheet_name="Metadata")
+                        st.download_button(
+                            label=f"⬇️ Save diann_export_{tfdr:.1f}FDR.xlsx",
+                            data=buffer.getvalue(),
+                            file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    except Exception:
+                        st.info("Excel engine not available. Please install openpyxl to enable Excel export.")
+                else:
+                    # CSV export, optionally brand with header block
+                    csv_body = filtered_df.to_csv(index=False)
+                    if brand_diann:
+                        cfg = results.get('config', {})
+                        header_lines = [
+                            f"# PeptiDIA v1.0",
+                            f"# Exported: {datetime.now().isoformat()}",
+                            f"# Test Method: {cfg.get('test_method')}",
+                            f"# Test FDR: {cfg.get('test_fdr')}",
+                            f"# Target FDR: {tfdr:.1f}",
+                            f"# Train Methods: {', '.join(cfg.get('train_methods', []))}",
+                        ]
+                        csv_data = "\n".join(header_lines) + "\n" + csv_body
+                    else:
+                        csv_data = csv_body
+                    st.download_button(
+                        label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                        data=csv_data,
+                        file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            except Exception as e:
+                st.info("Provide trained model and feature list in results to enable DIA-NN export.")
+                with st.expander("Export details / troubleshooting"):
+                    st.code(str(e))
         except Exception:
-            st.info("Provide trained model and feature list in results to enable DIA-NN export.")
-    except Exception:
-        pass
+            pass
     
     st.markdown("### 📊 Analysis Files")
     
@@ -3955,7 +4044,8 @@ def show_inference_interface():
                     display_inference_table_only(results_df)
                 
                 with tab4:
-                    display_diann_filtered_export(st.session_state.inference_results)
+                    # Show the full export section (CSV/JSON/config) plus DIA-NN export
+                    display_export_options(st.session_state.inference_results)
             else:
                 # This is raw results from the old inference flow
                 display_inference_results_with_tabs()
@@ -4420,6 +4510,18 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             status_text.text("Making predictions...")
             progress_bar.progress(70)
             
+            # Choose prediction device: default CPU (quiet), opt-in GPU via env
+            try:
+                import os as _os
+                desired_dev = str(_os.environ.get('PEPTIDIA_PREDICT_DEVICE', '')).lower()
+                if hasattr(trained_model, 'get_booster') and hasattr(trained_model.get_booster(), 'set_param'):
+                    if desired_dev == 'cuda':
+                        trained_model.get_booster().set_param({'device': 'cuda'})
+                    else:
+                        trained_model.get_booster().set_param({'device': 'cpu'})
+            except Exception:
+                pass
+
             # Make predictions using the loaded model
             y_scores = trained_model.predict_proba(X_test)[:, 1]
             
@@ -4467,6 +4569,9 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             
             # Run threshold optimization for each target FDR
             results = []
+            selected_sequences_by_fdr = {}
+            # Determine peptide sequence column in aggregated table
+            seq_col_agg = 'Modified.Sequence' if 'Modified.Sequence' in peptide_data.columns else 'Stripped.Sequence'
             for target_fdr in target_fdr_levels:
                 
                 if use_original_thresholds and target_fdr in original_thresholds:
@@ -4487,6 +4592,12 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                 if threshold is not None:
                     y_pred = (peptide_predictions >= threshold).astype(int)
                     discovered_peptides = np.sum(y_pred == 1)
+                    # Capture selected peptide sequences for export (works in discovery or validation)
+                    try:
+                        selected_seq = peptide_data.loc[y_pred == 1, seq_col_agg].astype(str).tolist()
+                        selected_sequences_by_fdr[float(target_fdr)] = selected_seq
+                    except Exception:
+                        pass
                     
                     if is_discovery_mode:
                         # Discovery mode: do not report FP/Actual FDR; show discovered peptides only
@@ -4527,13 +4638,16 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'Precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
                     'Recovery_Pct': recovery_pct,
                     'Increase_Pct': increase_pct,
-                    'Total_Validated_Candidates': total_validated
+                    'Total_Validated_Candidates': total_validated,
+                    # Also store selected sequences inline for convenience
+                    'Selected_Sequences': selected_sequences_by_fdr.get(float(target_fdr), [])
                 })
             
             status_text.text("Preparing results...")
             progress_bar.progress(90)
             
             # Create results in the same format as training
+            # Include pointers needed for export to work in inference mode
             analysis_results = {
                 'config': {
                     'train_methods': original_config['train_methods'],
@@ -4554,14 +4668,21 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'unique_test_peptides': test_data['Modified.Sequence'].nunique(),
                     'missed_peptides': max(0, len(ground_truth_peptides) - len(baseline_peptides)),
                     'runtime_minutes': 0.1,  # Inference is fast
-                    'inference_mode': True
+                    'inference_mode': True,
+                    # Provide results directory so export can locate saved model + features
+                    'results_dir': results_dir
                 },
                 'results': results,
                 'metadata': {
                     'analysis_timestamp': datetime.now().isoformat(),
                     'model_metadata': model_metadata,
                     'inference_mode': True
-                }
+                },
+                # Provide model + features when available (helps export without re-discovery)
+                'trained_model': trained_model,
+                'feature_names': training_features,
+                # Provide selected sequences for all FDRs to enable export without re-predicting
+                'selected_sequences_by_fdr': selected_sequences_by_fdr
             }
             
             progress_bar.progress(100)
@@ -5328,7 +5449,8 @@ def display_inference_results_with_tabs():
         display_inference_table_only(results_df)
     
     with tab4:
-        display_diann_filtered_export(results)
+        # Use the richer export panel for inference results, too
+        display_export_options(results)
 
 def load_baseline_peptides_inference(test_method=None):
     """Load baseline peptides for inference (matching method FDR_1)."""
