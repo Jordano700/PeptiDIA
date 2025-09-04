@@ -3729,17 +3729,69 @@ def display_export_options(results):
                         import io
                         import pandas as _pd
                         buffer = io.BytesIO()
-                        with _pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                            filtered_df.to_excel(writer, index=False, sheet_name="Results")
-                            _build_metadata_df().to_excel(writer, index=False, sheet_name="Metadata")
+
+                        # Build metadata and per-FDR results tables
+                        meta_df = _build_metadata_df()
+                        # Build FDR results table similar to results section/CLI
+                        fdr_df = _pd.DataFrame(results.get('results', [])) if results.get('results') else _pd.DataFrame()
+                        if not fdr_df.empty:
+                            # Ensure consistent ordering and friendly column names
+                            rename_map = {
+                                'Target_FDR': 'Target FDR (%)',
+                                'Threshold': 'Threshold',
+                                'Additional_Peptides': 'Additional Peptides',
+                                'False_Positives': 'False Positives',
+                                'Actual_FDR': 'Actual FDR (%)',
+                                'Precision': 'Precision',
+                                'Recovery_Pct': 'Recovery %',
+                                'Increase_Pct': 'Increase %',
+                                'MCC': 'MCC',
+                                'Total_Validated_Candidates': 'Validated Candidates',
+                            }
+                            cols = [c for c in rename_map.keys() if c in fdr_df.columns]
+                            fdr_df = fdr_df[cols].rename(columns=rename_map)
+                            # Sort by Target FDR if present
+                            if 'Target FDR (%)' in fdr_df.columns:
+                                with _pd.option_context('mode.use_inf_as_na', True):
+                                    fdr_df['Target FDR (%)'] = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
+
+                        # Choose an available Excel engine
+                        engine = None
+                        try:
+                            import openpyxl  # noqa: F401
+                            engine = 'openpyxl'
+                        except Exception:
+                            try:
+                                import xlsxwriter  # noqa: F401
+                                engine = 'xlsxwriter'
+                            except Exception:
+                                engine = None
+
+                        if not engine:
+                            raise RuntimeError("No Excel writer engine available (install openpyxl or xlsxwriter)")
+
+                        with _pd.ExcelWriter(buffer, engine=engine) as writer:
+                            # Sheet 1: filtered results
+                            filtered_df.to_excel(writer, index=False, sheet_name="Filtered Results")
+
+                            # Sheet 2: metadata + FDR results stacked with spacing
+                            sheet_name = "Export Summary"
+                            start_row = 0
+                            if not meta_df.empty:
+                                meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+                                start_row = len(meta_df) + 3
+                            if not fdr_df.empty:
+                                fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+
                         st.download_button(
-                            label=f"⬇️ Save diann_export_{tfdr:.1f}FDR.xlsx",
+                            label=f"⬇️ Save Combined Export (.xlsx)",
                             data=buffer.getvalue(),
                             file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         )
                     except Exception:
-                        st.info("Excel engine not available. Please install openpyxl to enable Excel export.")
+                        st.info("Excel engine not available. Please install openpyxl or xlsxwriter to enable Excel export.")
                 else:
                     # CSV export, optionally brand with header block
                     csv_body = filtered_df.to_csv(index=False)
