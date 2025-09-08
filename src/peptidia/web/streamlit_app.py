@@ -73,7 +73,7 @@ def inject_big_button_css():
 # Page configuration
 st.set_page_config(
     page_title="PeptiDIA",
-    page_icon="🧬",
+    #page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -1515,7 +1515,7 @@ def main():
     # Main header
     st.markdown("""
     <div class="main-header">
-        <div class="main-title">🧬 PeptiDIA</div>
+        <div class="main-title">PeptiDIA</div>
         <div class="main-subtitle">Professional Machine Learning Interface for DIA-NN Peptide Analysis</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1529,7 +1529,7 @@ def main():
         show_landing_page()
         # Add version footer for landing page
         st.markdown("---")
-        st.markdown("**PeptiDIA v1.0**")
+        st.markdown("**PeptiDIA v0.7**")
         return
     
     # Show selected mode interface
@@ -1542,7 +1542,7 @@ def main():
     
     # Add version footer at bottom of all pages
     st.markdown("---")
-    st.markdown("**PeptiDIA v1.0**")
+    st.markdown("**PeptiDIA v0.7**")
 
 def show_landing_page():
     """Display the landing page with mode selection."""
@@ -3664,7 +3664,7 @@ def display_export_options(results):
         st.markdown("### 🧪 DIA-NN Filtered Export")
         try:
             brand_diann = st.checkbox(
-                "✨ Brand CSV header (PeptiDIA v1.0, timestamp, config)",
+                "✨ Brand CSV header (PeptiDIA v0.7, timestamp, config)",
                 value=True,
                 help="Adds a commented header block above the CSV data."
             )
@@ -3673,7 +3673,8 @@ def display_export_options(results):
                 ["CSV (.csv)", "Excel (.xlsx)"],
                 index=0,
                 horizontal=True,
-                help="Excel export contains two sheets: Results and Metadata"
+                help="Excel export contains two sheets: Results and Summary",
+                key="diann_export_format"
             )
 
             targets = []
@@ -3683,40 +3684,43 @@ def display_export_options(results):
                 except Exception:
                     targets = []
             # Single-FDR CSV export: let user pick exactly one FDR
-            selection = st.selectbox("Target FDR for DIA-NN export", [f"{t:.1f}" for t in targets], help="Choose the FDR for ML-selected peptides")
+            selection = st.selectbox(
+                "Target FDR for DIA-NN export",
+                [f"{t:.1f}" for t in targets],
+                help="Choose the FDR for ML-selected peptides",
+                key="diann_export_fdr"
+            )
 
             def _build_metadata_df():
                 rows = []
                 cfg = results.get('config', {})
                 summ = results.get('summary', {})
-                best = extract_summary_metrics(results) or {}
+                # Clean, human‑readable timestamp
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 rows.extend([
+                    ("PeptiDIA", "v0.7"),
+                    ("Exported", ts),
                     ("Train Methods", ", ".join(cfg.get('train_methods', []))),
                     ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
                     ("Test Method", cfg.get('test_method')),
                     ("Test FDR", cfg.get('test_fdr')),
                     ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
-                    ("Aggregation Method", cfg.get('aggregation_method', 'max')),
-                    ("Exported", datetime.now().isoformat()),
-                    ("PeptiDIA", "v1.0"),
                 ])
+                # Hyperparameters
                 xgb = cfg.get('xgb_params', {}) or {}
                 for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
                     if k in xgb:
                         rows.append((f"xgb.{k}", xgb[k]))
+                # Feature selection flags
                 fs = cfg.get('feature_selection', {}) or {}
                 for k, v in fs.items():
                     if isinstance(v, (str, int, float, bool)):
                         rows.append((f"feature_selection.{k}", v))
-                for k in [
-                    "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
-                    "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
-                ]:
-                    if k in summ:
-                        rows.append((f"summary.{k}", summ[k]))
-                for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
-                    if bk in best:
-                        rows.append((f"best.{bk}", best[bk]))
+                # Minimal summary only
+                if 'baseline_peptides' in summ:
+                    rows.append(("Baseline Peptides", summ['baseline_peptides']))
+                if 'additional_candidates' in summ:
+                    rows.append(("Additional Candidates", summ['additional_candidates']))
                 import pandas as _pd
                 return _pd.DataFrame(rows, columns=["Key", "Value"])
 
@@ -3756,15 +3760,15 @@ def display_export_options(results):
                                     fdr_df['Target FDR (%)'] = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
                                 fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
 
-                        # Choose an available Excel engine
+                        # Choose an available Excel engine (prefer xlsxwriter for formatting & images)
                         engine = None
                         try:
-                            import openpyxl  # noqa: F401
-                            engine = 'openpyxl'
+                            import xlsxwriter  # noqa: F401
+                            engine = 'xlsxwriter'
                         except Exception:
                             try:
-                                import xlsxwriter  # noqa: F401
-                                engine = 'xlsxwriter'
+                                import openpyxl  # noqa: F401
+                                engine = 'openpyxl'
                             except Exception:
                                 engine = None
 
@@ -3777,12 +3781,45 @@ def display_export_options(results):
 
                             # Sheet 2: metadata + FDR results stacked with spacing
                             sheet_name = "Export Summary"
-                            start_row = 0
+                            # Leave space for title/logo
+                            start_row = 5
                             if not meta_df.empty:
                                 meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
-                                start_row = len(meta_df) + 3
+                                start_row = start_row + len(meta_df) + 3
                             if not fdr_df.empty:
                                 fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+
+                            # Optional styling and logo when using xlsxwriter
+                            if engine == 'xlsxwriter':
+                                wb = writer.book
+                                ws_results = writer.sheets.get('Filtered Results')
+                                ws_summary = writer.sheets.get(sheet_name)
+                                # Formats
+                                header_fmt = wb.add_format({'bold': True, 'bg_color': '#E6F2FA', 'border': 1})
+                                title_fmt = wb.add_format({'bold': True, 'font_size': 16})
+                                key_fmt = wb.add_format({'bold': True})
+                                # Title and logo
+                                ws_summary.write('A1', 'PeptiDIA Export Summary', title_fmt)
+                                try:
+                                    logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png')
+                                    if os.path.exists(logo_path):
+                                        ws_summary.insert_image('D1', logo_path, {'x_scale': 0.4, 'y_scale': 0.4})
+                                except Exception:
+                                    pass
+                                # Apply header formatting (meta table)
+                                if not meta_df.empty:
+                                    ws_summary.set_row(5, None, header_fmt)
+                                    # Set key column bold
+                                    ws_summary.set_column('A:A', 24, key_fmt)
+                                    ws_summary.set_column('B:B', 60)
+                                # Apply header formatting (FDR table)
+                                if not fdr_df.empty:
+                                    ws_summary.set_row(start_row, None, header_fmt)
+                                    ws_summary.set_column('A:K', 18)
+                                # Results sheet headers & widths
+                                if ws_results:
+                                    ws_results.set_row(0, None, header_fmt)
+                                    ws_results.set_column('A:Z', 14)
 
                         st.download_button(
                             label=f"⬇️ Save Combined Export (.xlsx)",
@@ -3798,7 +3835,7 @@ def display_export_options(results):
                     if brand_diann:
                         cfg = results.get('config', {})
                         header_lines = [
-                            f"# PeptiDIA v1.0",
+                            f"# PeptiDIA v0.7",
                             f"# Exported: {datetime.now().isoformat()}",
                             f"# Test Method: {cfg.get('test_method')}",
                             f"# Test FDR: {cfg.get('test_fdr')}",
@@ -6447,7 +6484,7 @@ def test_ground_truth_matching(dataset_name, config, training_methods):
     # Add footer with version at the bottom of the page
     st.markdown("---")
     st.markdown(
-        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v1.0</div>", 
+        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v0.7</div>", 
         unsafe_allow_html=True
     )
 
