@@ -129,5 +129,5 @@ BibTeX format:
 - 💡 Questions? Open an issue!
 
 ---
-<sub>PeptiDIA v1.0</sub>
+<sub>PeptiDIA v0.7</sub>
 
