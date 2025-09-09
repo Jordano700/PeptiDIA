@@ -87,6 +87,17 @@ class PeptideValidatorAPI:
             'device': self._detect_gpu_device()
         }
         
+        # Default feature selection settings to ensure internal helpers work
+        # even when called outside of run_analysis (e.g., scripts using the API directly).
+        self.feature_selection = {
+            'use_diann_quality': True,
+            'use_sequence_features': True,
+            'use_ms_features': True,
+            'use_statistical_features': True,
+            'use_library_features': True,
+            'excluded_features': []
+        }
+
         self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
         self.engineer_ratios = [
             ('Ms1.Area', 'Ms2.Area'),
@@ -168,6 +179,16 @@ class PeptideValidatorAPI:
             if results_dir is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 results_dir = f"results/STREAMLIT_RESULTS_{timestamp}"
+            # Allow environment override of base results directory for portability
+            base_override = os.environ.get('PEPTIDIA_RESULTS_DIR', '').strip()
+            if base_override:
+                try:
+                    os.makedirs(base_override, exist_ok=True)
+                    results_dir = os.path.join(base_override, os.path.basename(results_dir))
+                except Exception:
+                    pass
+            # Normalize to absolute path so the frontend can always locate outputs
+            results_dir = os.path.abspath(results_dir)
             
             os.makedirs(results_dir, exist_ok=True)
             for subdir in ['plots', 'tables', 'feature_analysis', 'raw_data']:
@@ -236,6 +257,13 @@ class PeptideValidatorAPI:
             self._create_visualizations(results, results_dir, model, X_test, training_features)
             
             # Compile final results
+            # Compute also a project-relative path for portability across machines
+            try:
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                results_dir_rel = os.path.relpath(results_dir, start=project_root)
+            except Exception:
+                results_dir_rel = results_dir
+
             analysis_results = {
                 'config': {
                     'train_methods': train_methods,
@@ -256,7 +284,8 @@ class PeptideValidatorAPI:
                     'test_samples': len(test_data),
                     'unique_test_peptides': test_data['Modified.Sequence'].nunique(),
                     'aggregation_method': aggregation_method,
-                    'results_dir': results_dir
+                    'results_dir': results_dir,
+                    'results_dir_rel': results_dir_rel
                 },
                 'naive_comparison': naive_results,
                 'results': results,
@@ -797,25 +826,14 @@ class PeptideValidatorAPI:
         return feats.replace([np.inf, -np.inf], np.nan).fillna(0)
     
     def _train_model(self, train_data: pd.DataFrame, y_train: pd.Series) -> Tuple[object, List[str]]:
-        """Train the enhanced ensemble model with calibration (no warm-up split)."""
-        
+        """Train the ensemble with calibration only (no warm-up split)."""
+
         # Create features
         X_train = self._make_advanced_features(train_data)
-        
-        # Sanity checks on labels – avoid XGBoost logistic base_score errors
-        unique_classes = np.unique(y_train)
-        if len(unique_classes) < 2:
-            raise ValueError(
-                "Training labels contain a single class. "
-                "This usually means the ground-truth mapping returned no positives for the selected training methods. "
-                "Please verify dataset_info.json mapping for your dataset (e.g., ASTRAL) and training method selection."
-            )
-        pos = int(y_train.sum())
-        neg = int(len(y_train) - pos)
-        
+
         # Create ensemble model
         xgb = XGBClassifier(**self.optimal_params)
-        
+
         rf = RandomForestClassifier(
             n_estimators=500,
             max_depth=8,
@@ -824,32 +842,24 @@ class PeptideValidatorAPI:
             random_state=42,
             n_jobs=-1
         )
-        
+
         lr = LogisticRegression(
             C=1.0,
             max_iter=1000,
             random_state=42
         )
-        
+
         ensemble = VotingClassifier(
             estimators=[('xgb', xgb), ('rf', rf), ('lr', lr)],
             voting='soft',
             weights=[3, 2, 1]
         )
-        
-        # Calibrate model with deterministic folds. Ensure each class has at least one
-        # sample per fold; otherwise reduce n_splits or skip calibration gracefully.
-        max_splits = 3
-        feasible_splits = max(2, min(max_splits, pos, neg))
-        if feasible_splits >= 2:
-            skf = StratifiedKFold(n_splits=feasible_splits, shuffle=True, random_state=42)
-            calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
-            calibrated_model.fit(X_train, y_train)
-        else:
-            # Fallback: no calibration when class counts are too small
-            ensemble.fit(X_train, y_train)
-            calibrated_model = ensemble
-        
+
+        # Calibrate with deterministic folds (handles fitting internally)
+        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+        calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
+        calibrated_model.fit(X_train, y_train)
+
         return calibrated_model, X_train.columns.tolist()
     
     def _save_trained_model(self, model, training_features, results_dir, training_results=None):
@@ -1271,42 +1281,145 @@ Model Performance:
     def _create_feature_importance_analysis(self, model, X_test, training_features, results_dir):
         """Create comprehensive feature importance analysis including basic XGBoost and SHAP plots."""
         print("🔍 Generating feature importance analysis...")
-        
-        # Extract the base XGBoost model for feature importance
+
+        # Extract a fitted XGBoost model for feature importance
         base_model = self._extract_xgboost_model(model)
-        
-        # 1. Create basic XGBoost feature importance plot
-        if base_model is not None:
-            self._create_feature_importance_plot(base_model, training_features, results_dir)
+
+        # Fallback: try to locate any fitted estimator with feature_importances_
+        def _find_any_fitted_with_importance(m):
+            from sklearn.base import ClassifierMixin
+            # breadth-first over likely attributes
+            to_visit = []
+            for attr in ('calibrated_classifiers_', 'base_estimator', 'estimator', 'named_estimators_', 'estimators_', 'estimators'):
+                if hasattr(m, attr):
+                    to_visit.append(getattr(m, attr))
+            while to_visit:
+                cur = to_visit.pop(0)
+                if cur is None:
+                    continue
+                # Expand dictionaries and lists/tuples
+                if isinstance(cur, dict):
+                    items = list(cur.values())
+                elif isinstance(cur, (list, tuple)):
+                    # For (name, est) pairs
+                    items = [e if not isinstance(e, tuple) else e[1] for e in cur]
+                else:
+                    items = [cur]
+                for est in items:
+                    if est is None:
+                        continue
+                    if hasattr(est, 'feature_importances_') and (hasattr(est, 'classes_') or hasattr(est, 'n_features_in_')):
+                        return est
+                    # enqueue children
+                    for attr in ('named_estimators_', 'estimators_', 'estimators', 'base_estimator', 'estimator'):
+                        if hasattr(est, attr):
+                            to_visit.append(getattr(est, attr))
+            return None
+
+        importance_model = base_model if base_model is not None else _find_any_fitted_with_importance(model)
+
+        # 1. Create basic feature importance plot if any suitable model found
+        if importance_model is not None:
+            self._create_feature_importance_plot(importance_model, training_features, results_dir)
+        else:
+            # Write a small debug note to help diagnose in UI
+            try:
+                with open(f"{results_dir}/feature_analysis/feature_importance_debug.txt", 'w') as f:
+                    f.write("Could not locate a fitted estimator with feature_importances_.\n")
+                    f.write(f"Model type: {type(model)}\n")
+            except Exception:
+                pass
         
         # 2. Create SHAP analysis
         self._create_shap_analysis(model, X_test, training_features, results_dir)
     
     def _extract_xgboost_model(self, model):
-        """Extract XGBoost model from ensemble/calibrated wrapper."""
-        base_model = None
-        
-        # 1️⃣ Directly inside a VotingClassifier
-        if hasattr(model, 'named_estimators_') and 'xgb' in model.named_estimators_:
-            base_model = model.named_estimators_['xgb']
-        
-        # 2️⃣ Wrapped by CalibratedClassifierCV -> access its base_estimator / estimator
-        elif hasattr(model, 'base_estimator'):
-            be = model.base_estimator
-            if hasattr(be, 'named_estimators_') and 'xgb' in be.named_estimators_:
-                base_model = be.named_estimators_['xgb']
-        
-        # 3️⃣ Check for estimator attribute (another CalibratedClassifierCV pattern)
-        elif hasattr(model, 'estimator'):
-            est = model.estimator
-            if hasattr(est, 'named_estimators_') and 'xgb' in est.named_estimators_:
-                base_model = est.named_estimators_['xgb']
-        
-        # 4️⃣ Fallback – assume the provided model itself is an XGBClassifier
-        if base_model is None and hasattr(model, 'feature_importances_'):
-            base_model = model
-        
-        return base_model
+        """Extract a fitted XGBClassifier from common wrappers.
+
+        Handles:
+        - VotingClassifier: named_estimators_, estimators_, estimators
+        - CalibratedClassifierCV: base_estimator, estimator with nested VotingClassifier
+        - Direct XGBClassifier
+        Returns None if not found.
+        """
+        # Direct XGB model
+        try:
+            from xgboost import XGBClassifier as _XGBClassifier
+        except Exception:
+            _XGBClassifier = None
+
+        def is_xgb(est):
+            if est is None:
+                return False
+            if _XGBClassifier is not None and isinstance(est, _XGBClassifier):
+                return True
+            # Heuristic if class import mismatch
+            return hasattr(est, 'feature_importances_') and est.__class__.__name__.lower().startswith('xgb')
+
+        def is_fitted_xgb(est):
+            # Heuristic: XGBClassifier exposes 'classes_' only after fit
+            return is_xgb(est) and hasattr(est, 'classes_')
+
+        # Try direct
+        if is_fitted_xgb(model):
+            return model
+
+        # Prefer fitted per-fold base estimators produced by CalibratedClassifierCV
+        if hasattr(model, 'calibrated_classifiers_') and isinstance(model.calibrated_classifiers_, (list, tuple)):
+            for cc in model.calibrated_classifiers_:
+                be = getattr(cc, 'base_estimator', None)
+                # Direct fitted XGB
+                if is_fitted_xgb(be):
+                    return be
+                # Fitted VotingClassifier within calibrator
+                if hasattr(be, 'estimators_') and isinstance(be.estimators_, (list, tuple)):
+                    for est in be.estimators_:
+                        if is_fitted_xgb(est):
+                            return est
+                if hasattr(be, 'named_estimators_') and isinstance(getattr(be, 'named_estimators_', None), dict):
+                    for name, est in be.named_estimators_.items():
+                        if is_fitted_xgb(est):
+                            return est
+
+        # VotingClassifier fitted form: named_estimators_ and estimators_
+        if hasattr(model, 'named_estimators_') and isinstance(getattr(model, 'named_estimators_', None), dict):
+            ne = model.named_estimators_
+            if 'xgb' in ne and is_fitted_xgb(ne['xgb']):
+                return ne['xgb']
+        if hasattr(model, 'estimators_') and isinstance(model.estimators_, (list, tuple)):
+            for est in model.estimators_:
+                if is_fitted_xgb(est):
+                    return est
+        if hasattr(model, 'estimators') and isinstance(model.estimators, (list, tuple)):
+            for name, est in model.estimators:
+                if (name == 'xgb' or est.__class__.__name__.lower().startswith('xgb')) and is_fitted_xgb(est):
+                    return est
+
+        # CalibratedClassifierCV: unwrap base_estimator / estimator
+        for attr in ('base_estimator', 'estimator'):
+            be = getattr(model, attr, None)
+            if be is None:
+                continue
+            if is_fitted_xgb(be):
+                return be
+            # Nested voting inside calibrator
+            if hasattr(be, 'named_estimators_') and isinstance(getattr(be, 'named_estimators_', None), dict):
+                ne = be.named_estimators_
+                if 'xgb' in ne and is_fitted_xgb(ne['xgb']):
+                    return ne['xgb']
+            if hasattr(be, 'estimators_') and isinstance(be.estimators_, (list, tuple)):
+                for est in be.estimators_:
+                    if is_fitted_xgb(est):
+                        return est
+            if hasattr(be, 'estimators') and isinstance(be.estimators, (list, tuple)):
+                for name, est in be.estimators:
+                    if (name == 'xgb' or est.__class__.__name__.lower().startswith('xgb')) and is_fitted_xgb(est):
+                        return est
+
+        # Last resort: models exposing feature_importances_
+        if hasattr(model, 'feature_importances_') and hasattr(model, 'classes_'):
+            return model
+        return None
     
     def _create_feature_importance_plot(self, model, feature_names, results_dir):
         """Create feature importance bar plot with Nature color scheme."""
@@ -1382,7 +1495,10 @@ Model Performance:
                 print(f"   Model type: {type(model)}")
                 return
             
-            # Calculate SHAP values
+            # Calculate SHAP values (only for fitted XGB)
+            if not hasattr(base_model, 'classes_'):
+                print("⚠️ Base XGBoost model not fitted; skipping SHAP analysis")
+                return
             explainer = shap.TreeExplainer(base_model)
             shap_values = explainer.shap_values(X_sample)
             

@@ -44,6 +44,23 @@ from src.peptidia.core.dataset_utils import (
     get_all_available_methods,
 )
 
+def _resolve_results_dir_from_summary(summary: dict) -> str:
+    """Return an absolute results_dir from summary with fallback to relative path.
+
+    Prefers absolute 'results_dir' if it exists. Otherwise tries 'results_dir_rel'
+    relative to the project root. Returns best-effort path (may not exist).
+    """
+    rd = summary.get('results_dir', '') if isinstance(summary, dict) else ''
+    if rd and os.path.isabs(rd) and os.path.isdir(rd):
+        return rd
+    rd_rel = summary.get('results_dir_rel', '') if isinstance(summary, dict) else ''
+    if rd_rel:
+        # If already absolute, return as is; else resolve relative to project_root
+        candidate = rd_rel if os.path.isabs(rd_rel) else os.path.join(str(project_root), rd_rel)
+        return candidate
+    # Fall back to whatever is present
+    return rd or rd_rel
+
 # Import functions are now available locally in peptide_validator_api.py
 # No need for external scripts directory
 
@@ -3309,8 +3326,8 @@ def display_results():
     
     # Feature Importance tab
     with tab4:
-        results_dir = results['summary'].get('results_dir', '') if results else ''
-        if results_dir:
+        results_dir = _resolve_results_dir_from_summary(results.get('summary', {})) if results else ''
+        if results_dir and os.path.isdir(results_dir):
             display_feature_importance_tab(results_dir)
         else:
             st.info("No results directory found – cannot display feature importance plots.")
@@ -3869,8 +3886,8 @@ def display_export_options(results):
     st.markdown("### 📊 Analysis Files")
     
     # Show results directory info
-    if 'summary' in results and 'results_dir' in results['summary']:
-        results_dir = results['summary']['results_dir']
+    if 'summary' in results:
+        results_dir = _resolve_results_dir_from_summary(results['summary'])
         st.info(f"📁 **Full results saved to:** `{results_dir}`")
         
         st.markdown("**Directory contains:**")
