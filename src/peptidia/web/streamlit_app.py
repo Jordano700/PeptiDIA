@@ -20,6 +20,8 @@ import warnings
 # Suppress XGBoost CUDA device warnings for cleaner interface
 warnings.filterwarnings('ignore', message='.*Falling back to prediction using DMatrix.*')
 warnings.filterwarnings('ignore', message='.*mismatched devices.*')
+# Plotly deprecation noise: engine arg will be removed (Kaleido-only)
+warnings.filterwarnings('ignore', message=r".*Support for the 'engine' argument is deprecated.*")
 
 import os
 import json
@@ -34,7 +36,13 @@ sys.path.insert(0, str(project_root))
 
 # Import file discovery functions
 from src.peptidia.core.file_discovery import discover_available_files, get_available_methods, get_files_for_method, extract_method_and_group_from_filename, group_files_by_triplicates
-from src.peptidia.core.dataset_utils import discover_available_files_by_dataset, extract_method_from_filename, get_configured_methods, get_files_for_configured_method
+from src.peptidia.core.dataset_utils import (
+    discover_available_files_by_dataset,
+    extract_method_from_filename,
+    get_configured_methods,
+    get_files_for_configured_method,
+    get_all_available_methods,
+)
 
 # Import functions are now available locally in peptide_validator_api.py
 # No need for external scripts directory
@@ -4210,25 +4218,18 @@ def show_inference_interface():
     def get_available_methods_cached(dataset_filter):
         return get_configured_methods(dataset_filter)
     
-    # Get ALL available methods for inference (including those without ground truth)
+    # Get ALL available methods for inference (including grouped ones)
+    @st.cache_data(ttl=300)
     def get_all_available_methods_cached(dataset_filter):
-        # For inference mode, we want ALL methods regardless of ground truth availability
-        files_info = discover_available_files()
-        all_methods = set()
-        
-        # Collect methods from all data types (baseline, training, testing)
-        for category in ['baseline', 'training', 'testing']:
-            if category in files_info:
-                for file_info in files_info[category]:
-                    if 'method' in file_info:
-                        all_methods.add(file_info['method'])
-        
-        # Filter by dataset if specified
-        if dataset_filter != 'All':
-            filtered_methods = [method for method in all_methods if dataset_filter in method]
-            return sorted(filtered_methods)
-        
-        return sorted(all_methods)
+        # 1) Configured grouped methods (e.g., ASTRAL_Group_002)
+        configured = set(get_configured_methods(dataset_filter))
+
+        # 2) Raw per-file methods (discovery mode) via dataset utilities
+        raw_methods = set(get_all_available_methods(dataset_filter, include_discovery_mode=True))
+
+        # Union so inference shows both grouped and individual methods
+        union = sorted(configured.union(raw_methods))
+        return union
     
     # Get available methods (including those without ground truth for discovery mode)
     available_methods_filtered = get_all_available_methods_cached(dataset_filter)
@@ -4243,6 +4244,8 @@ def show_inference_interface():
     # Display the full selected method name
     if test_method:
         st.sidebar.markdown(f"**Selected:** `{test_method}`")
+        if "_Group_" not in test_method:
+            st.sidebar.caption("Tip: Grouped methods (e.g., ASTRAL_Group_002) also appear here. If you pick an individual file, PeptiDIA will automatically map it to the correct group for ground-truth metrics when available.")
     
     test_fdr = st.sidebar.selectbox(
         "📈 Select test FDR level:",

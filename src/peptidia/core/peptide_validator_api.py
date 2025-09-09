@@ -82,6 +82,7 @@ class PeptideValidatorAPI:
             'gamma': 0, 
             'colsample_bytree': 0.8,
             'random_state': 42,
+            'base_score': 0.5,  # prevent invalid defaults with logistic loss
             'tree_method': 'hist',
             'device': self._detect_gpu_device()
         }
@@ -381,15 +382,15 @@ class PeptideValidatorAPI:
             if test_method in direct_rules:
                 matched_rule_key = test_method
             else:
-                # Try to find a matching group by extracting sample ID from the method name
-                # For methods like "Coeur_20250728_RD201_EXB_EV1107_300SPD_Coeur_A55_01"
-                # Extract "A55" and look for "Coeur_Group_A55" pattern
+                # Try to infer a group key from the method name.
+                # Supports:
+                #  - Alphabetical sample IDs like "_A55_"  -> "<Dataset>_Group_A55"
+                #  - Trailing numeric IDs like "..._001"   -> "<Dataset>_Group_001" (ASTRAL style)
                 import re
-                
-                # Extract dataset name
+
                 dataset_name_lower = dataset_name.lower()
                 if dataset_name_lower in test_method.lower():
-                    # Look for sample ID pattern (like A55, A08, etc.)
+                    # Pattern 1: Letter+digits between underscores (e.g., _A55_)
                     sample_match = re.search(r'_([A-Z]\d+)_', test_method)
                     if sample_match:
                         sample_id = sample_match.group(1)
@@ -397,6 +398,15 @@ class PeptideValidatorAPI:
                         if potential_group in direct_rules:
                             matched_rule_key = potential_group
                             print(f"Info: Mapped {test_method} -> {potential_group} via sample ID {sample_id}")
+                    # Pattern 2: Trailing 3-digit numeric group (e.g., _001 at end)
+                    if not matched_rule_key:
+                        num_match = re.search(r'_(\d{3})$', test_method)
+                        if num_match:
+                            group_num = num_match.group(1)
+                            potential_group = f"{dataset_name}_Group_{group_num}"
+                            if potential_group in direct_rules:
+                                matched_rule_key = potential_group
+                                print(f"Info: Mapped {test_method} -> {potential_group} via numeric group {group_num}")
             
             if matched_rule_key:
                 target_gt_filenames = direct_rules[matched_rule_key]
@@ -404,21 +414,25 @@ class PeptideValidatorAPI:
                 if isinstance(target_gt_filenames, str):
                     target_gt_filenames = [target_gt_filenames]
 
-                # For triplicate groups (like Coeur_Group_A55), find all files matching the sample ID
+                # For groups, first try exact filename mapping if provided
                 if "_Group_" in matched_rule_key:
-                    # Extract sample ID from group name (e.g., "A55" from "Coeur_Group_A55")
-                    group_parts = matched_rule_key.split("_Group_")
-                    if len(group_parts) == 2:
-                        sample_id = group_parts[1]  # e.g., "A55"
-                        
-                        # Find all ground truth files containing this sample ID
+                    for target_gt_filename in target_gt_filenames:
                         for gt_file in dataset_gt_files:
-                            gt_method = gt_file['method']
-                            if sample_id in gt_method:
+                            if target_gt_filename == gt_file['method']:
                                 matched_files.append(gt_file['path'])
-                        
-                        if matched_files:
-                            print(f"Info: Found {len(matched_files)} ground truth files for group {matched_rule_key} (sample {sample_id})")
+                                break
+
+                    # If no exact matches found, fall back to sample-id search (legacy)
+                    if not matched_files:
+                        group_parts = matched_rule_key.split("_Group_")
+                        if len(group_parts) == 2:
+                            sample_id = group_parts[1]  # e.g., "A55" or "007"
+                            for gt_file in dataset_gt_files:
+                                gt_method = gt_file['method']
+                                if sample_id in gt_method:
+                                    matched_files.append(gt_file['path'])
+                            if matched_files:
+                                print(f"Info: Found {len(matched_files)} ground truth files for group {matched_rule_key} (sample {sample_id})")
                 else:
                     # Standard exact matching for individual methods
                     for target_gt_filename in target_gt_filenames:
@@ -783,15 +797,21 @@ class PeptideValidatorAPI:
         return feats.replace([np.inf, -np.inf], np.nan).fillna(0)
     
     def _train_model(self, train_data: pd.DataFrame, y_train: pd.Series) -> Tuple[object, List[str]]:
-        """Train the enhanced ensemble model with calibration."""
+        """Train the enhanced ensemble model with calibration (no warm-up split)."""
         
         # Create features
         X_train = self._make_advanced_features(train_data)
         
-        # Create validation split
-        X_train_fold, X_val_fold, y_train_fold, y_val_fold = train_test_split(
-            X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
-        )
+        # Sanity checks on labels – avoid XGBoost logistic base_score errors
+        unique_classes = np.unique(y_train)
+        if len(unique_classes) < 2:
+            raise ValueError(
+                "Training labels contain a single class. "
+                "This usually means the ground-truth mapping returned no positives for the selected training methods. "
+                "Please verify dataset_info.json mapping for your dataset (e.g., ASTRAL) and training method selection."
+            )
+        pos = int(y_train.sum())
+        neg = int(len(y_train) - pos)
         
         # Create ensemble model
         xgb = XGBClassifier(**self.optimal_params)
@@ -817,13 +837,18 @@ class PeptideValidatorAPI:
             weights=[3, 2, 1]
         )
         
-        # Train ensemble
-        ensemble.fit(X_train_fold, y_train_fold)
-        
-        # Calibrate model with deterministic folds
-        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-        calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
-        calibrated_model.fit(X_train, y_train)
+        # Calibrate model with deterministic folds. Ensure each class has at least one
+        # sample per fold; otherwise reduce n_splits or skip calibration gracefully.
+        max_splits = 3
+        feasible_splits = max(2, min(max_splits, pos, neg))
+        if feasible_splits >= 2:
+            skf = StratifiedKFold(n_splits=feasible_splits, shuffle=True, random_state=42)
+            calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
+            calibrated_model.fit(X_train, y_train)
+        else:
+            # Fallback: no calibration when class counts are too small
+            ensemble.fit(X_train, y_train)
+            calibrated_model = ensemble
         
         return calibrated_model, X_train.columns.tolist()
     
