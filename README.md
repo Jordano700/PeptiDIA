@@ -2,7 +2,7 @@
   <img src="assets/peptidia_official_logo.png" alt="PeptiDIA - Pixel Art DNA Logo" width="500"/>
   
   # PeptiDIA
-  **Find More Peptides in Your Data** 🧬
+  **Find More Peptides in Your Data** 
 </div>
 
 ## What is PeptiDIA?
