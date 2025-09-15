@@ -17,6 +17,8 @@ data/**/*.json
 
 # Project development files
 CLAUDE.md
+\n+# Local development scripts (never pushed)
+dev/**
 
 # Results, models, and run history - keep local only
 # Keep folder structure but ignore result files
