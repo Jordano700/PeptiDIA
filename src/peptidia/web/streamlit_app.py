@@ -3538,7 +3538,7 @@ def display_data_tables(df):
     display_df = df.copy()
     
     # Remove internal columns from display 
-    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates']
+    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates', 'Selected_Sequences']
     for col in columns_to_remove:
         if col in display_df.columns:
             display_df = display_df.drop(col, axis=1)
@@ -3567,106 +3567,41 @@ def display_data_tables(df):
         }
     )
 
-def display_export_options(results):
-    """Display export options for results."""
-    
-    st.markdown("### 💾 Export Results")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        # Export detailed results CSV
-        if 'results' in results and results['results']:
+def display_export_options(results, include_general_exports: bool = True):
+    """Display export controls for analysis or inference results."""
+
+    if include_general_exports:
+        st.markdown("### 💾 Export Results")
+
+        if 'results' not in results or not results['results']:
+            st.info("No detailed results available for export.")
+        else:
             results_df = pd.DataFrame(results['results'])
-            
-            # Remove Aggregation_Method column from export (internal use only)
             if 'Aggregation_Method' in results_df.columns:
                 results_df = results_df.drop('Aggregation_Method', axis=1)
-            
-            csv_data = results_df.to_csv(index=False)
-            st.download_button(
-                label="📄 Download Results CSV",
-                data=csv_data,
-                file_name=f"peptide_validation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-    
-    with col2:
-        # Export comprehensive analysis summary
-        summary_data = {
-            'analysis_config': results.get('config', {}),
-            'analysis_summary': results.get('summary', {}),
-            'best_results': extract_summary_metrics(results),
-            'metadata': results.get('metadata', {})
-        }
-        json_data = json.dumps(summary_data, indent=2, default=str)
-        st.download_button(
-            label="📋 Download Full Summary (JSON)",
-            data=json_data,
-            file_name=f"analysis_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json"
-        )
 
-        # Also offer a flat CSV summary (Key,Value)
-        try:
-            rows = []
-            cfg = results.get('config', {})
-            summ = results.get('summary', {})
-            best = extract_summary_metrics(results) or {}
-            rows.extend([
-                ("Train Methods", ", ".join(cfg.get('train_methods', []))),
-                ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
-                ("Test Method", cfg.get('test_method')),
-                ("Test FDR", cfg.get('test_fdr')),
-                ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
-                ("Aggregation Method", cfg.get('aggregation_method', 'max')),
-            ])
-            xgb = cfg.get('xgb_params', {}) or {}
-            for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
-                if k in xgb:
-                    rows.append((f"xgb.{k}", xgb[k]))
-            fs = cfg.get('feature_selection', {}) or {}
-            for k, v in fs.items():
-                if isinstance(v, (str, int, float, bool)):
-                    rows.append((f"feature_selection.{k}", v))
-            for k in [
-                "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
-                "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
-            ]:
-                if k in summ:
-                    rows.append((f"summary.{k}", summ[k]))
-            for bk in ["best_fdr", "best_peptides", "total_runtime", "recovery_efficiency"]:
-                if bk in best:
-                    rows.append((f"best.{bk}", best[bk]))
-            # Per-target thresholds and metrics
-            for item in results.get('results', []):
-                tfdr = item.get('Target_FDR')
-                if tfdr is None:
-                    continue
-                for key, prefix in [("Threshold", "threshold"), ("Additional_Peptides", "additional_peptides"), ("Actual_FDR", "actual_fdr")]:
-                    if key in item:
-                        rows.append((f"{prefix}@{tfdr}%", item[key]))
-            import pandas as _pd
-            summary_df = _pd.DataFrame(rows, columns=["Key", "Value"])
+            summary_bundle = {
+                'analysis_config': results.get('config', {}),
+                'analysis_summary': results.get('summary', {}),
+                'best_results': extract_summary_metrics(results),
+                'metadata': results.get('metadata', {})
+            }
+
+            import io
+            import zipfile
+
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as z:
+                z.writestr('results.csv', results_df.to_csv(index=False))
+                z.writestr('training_summary.json', json.dumps(summary_bundle, indent=2, default=str))
+            buffer.seek(0)
+
             st.download_button(
-                label="🧾 Download Full Summary (CSV)",
-                data=summary_df.to_csv(index=False),
-                file_name=f"analysis_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+                label="⬇️ Download Results Package",
+                data=buffer.getvalue(),
+                file_name=f"peptidia_training_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip"
             )
-        except Exception:
-            pass
-    
-    with col3:
-        # Export configuration for sharing
-        config_data = results.get('config', {})
-        config_json = json.dumps(config_data, indent=2)
-        st.download_button(
-            label="⚙️ Download Config",
-            data=config_json,
-            file_name=f"analysis_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json"
-        )
 
     # DIA-NN filtered export (only in inference mode)
     is_inference_mode = (
@@ -4148,8 +4083,8 @@ def show_inference_interface():
                     display_inference_table_only(results_df)
                 
                 with tab4:
-                    # Show the full export section (CSV/JSON/config) plus DIA-NN export
-                    display_export_options(st.session_state.inference_results)
+                    # Show only the DIA-NN export for inference results
+                    display_export_options(st.session_state.inference_results, include_general_exports=False)
             else:
                 # This is raw results from the old inference flow
                 display_inference_results_with_tabs()
@@ -4737,9 +4672,7 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'Precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
                     'Recovery_Pct': recovery_pct,
                     'Increase_Pct': increase_pct,
-                    'Total_Validated_Candidates': total_validated,
-                    # Also store selected sequences inline for convenience
-                    'Selected_Sequences': selected_sequences_by_fdr.get(float(target_fdr), [])
+                    'Total_Validated_Candidates': total_validated
                 })
             
             status_text.text("Preparing results...")
