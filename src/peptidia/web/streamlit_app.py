@@ -2812,278 +2812,273 @@ def display_feature_importance_tab(results_dir: str):
     feature_csv_path = os.path.join(feature_analysis_dir, "feature_importance_full.csv")
     csv_available = os.path.exists(feature_csv_path)
 
+    feature_df = None
+    feature_df_loaded = False
+
     if not csv_available:
         st.info("🔍 Feature importance data is not available for this run.")
         st.markdown("**Note**: Feature importance analysis is generated during model training and may not be available for all analysis types.")
-        return
-
-    try:
-        # Load feature importance data with caching
-        feature_df = load_feature_importance_csv(feature_csv_path)
-        if feature_df is None:
-            return
-        
-        if len(feature_df) == 0:
-            st.info("All features have zero importance in this model.")
-            return
-            
-        # Sort by importance descending
-        feature_df = feature_df.sort_values('importance', ascending=False)
-        
-        # Format importance as percentage
-        feature_df['importance_pct'] = (feature_df['importance'] * 100).round(2)
-        
-        st.markdown("#### 📈 Interactive Feature Importance Visualizations")
-        
-        # 1. Top 20 Feature Importance Bar Chart (Interactive)
-        top_20 = feature_df.head(20).copy()
-        
-        # Get current colors for consistency
-        current_colors = get_current_colors()
-        
-        fig_bar = px.bar(
-            top_20, 
-            x='importance_pct', 
-            y='feature',
-            orientation='h',
-            title='Top 20 Most Important Features',
-            labels={'importance_pct': 'Importance (%)', 'feature': 'Feature'},
-            color='importance_pct',
-            color_continuous_scale=current_colors['feature_gradient']
-        )
-        
-        fig_bar.update_layout(
-            height=600,
-            yaxis={'categoryorder': 'total ascending', 'gridcolor': current_colors['grid']},
-            plot_bgcolor=current_colors['background'],
-            paper_bgcolor=current_colors['background'],
-            font=dict(family="Inter", size=12, color=current_colors['text']),
-            title_font_size=16,
-            title_font_color=current_colors['text'],
-            xaxis=dict(gridcolor=current_colors['grid']),
-            coloraxis_colorbar=dict(
-                title=dict(text="Importance (%)", side="right"),
-                thickness=12,
-                len=0.7
-            )
-        )
-        
-        st.plotly_chart(fig_bar, use_container_width=True)
-        
-        # Add explanatory note about different importance methods
-        st.info("""
-        ℹ️ **Note**: The visualizations above and below use different importance calculation methods:
-        - **XGBoost Importance** (above): Measures the improvement in accuracy brought by a feature to the branches it is on
-        - **SHAP Values** (below): Measures the average contribution of each feature to individual predictions
-        """)
-        
-        # 2. SHAP Feature Importance Analysis - Interactive Version
-        shap_data_path = os.path.join(feature_analysis_dir, "shap_data.json")
-        shap_beeswarm_path = os.path.join(feature_analysis_dir, "shap_summary_beeswarm.png")
-        shap_bar_path = os.path.join(feature_analysis_dir, "shap_importance_bar.png")
-        
-        if os.path.exists(shap_data_path):
-            st.markdown("#### 🐝 SHAP Feature Importance Analysis")
-           
-            
-            # Use interactive plots - pass current color scheme to ensure plot updates
-            current_scheme = st.session_state.get('selected_color_scheme', 'Default')
-            create_interactive_shap_plots(shap_data_path, current_scheme)
-            
-        elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
-            st.markdown("#### 🐝 SHAP Feature Importance Analysis (Static)")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if os.path.exists(shap_beeswarm_path):
-                    st.markdown("**SHAP Beeswarm Summary Plot**")
-                    st.image(shap_beeswarm_path, use_container_width=True)
-                else:
-                    st.info("SHAP beeswarm plot not available")
-            
-            with col2:
-                if os.path.exists(shap_bar_path):
-                    st.markdown("**SHAP Feature Importance**")
-                    st.image(shap_bar_path, use_container_width=True)
-                else:
-                    st.info("SHAP bar plot not available")
-        
-        # 3. Feature Categories Analysis (if we can detect patterns)
-        st.markdown("#### 🔍 Feature Category Analysis")
-        
-        # Categorize features using cached function for performance
-        feature_categories = categorize_features(feature_df['feature'].tolist())
-        feature_df['category'] = feature_df['feature'].map(feature_categories).fillna('Other Features')
-        
-        # Use module-level constant for category descriptions
-        category_descriptions = FEATURE_CATEGORY_DESCRIPTIONS
-        
-        # Category importance summary
-        category_summary = feature_df.groupby('category').agg({
-            'importance_pct': ['sum', 'mean', 'count']
-        }).round(2)
-        category_summary.columns = ['Total_Importance', 'Mean_Importance', 'Feature_Count']
-        category_summary = category_summary.reset_index().sort_values('Total_Importance', ascending=False)
-        
-        # Add descriptions for hover text
-        category_summary['Description'] = category_summary['category'].map(category_descriptions)
-        category_summary['Hover_Text'] = (
-            '<b>' + category_summary['category'] + '</b><br>' +
-            category_summary['Description'] + '<br><br>' +
-            '<b>Total Importance:</b> ' + category_summary['Total_Importance'].astype(str) + '%<br>' +
-            '<b>Feature Count:</b> ' + category_summary['Feature_Count'].astype(str) + '<br>' +
-            '<b>Average Importance:</b> ' + category_summary['Mean_Importance'].astype(str) + '%'
-        )
-        
-        fig_category = px.bar(
-            category_summary,
-            x='category',
-            y='Total_Importance',
-            title='Feature Importance by Category',
-            labels={'category': 'Feature Category', 'Total_Importance': 'Total Importance (%)'},
-            color='Total_Importance',
-            color_continuous_scale=CHART_COLORS['feature_gradient'],
-            hover_data={'Total_Importance': ':.1f', 'Feature_Count': True, 'Mean_Importance': ':.1f'},
-            custom_data=['Hover_Text']
-        )
-        
-        # Update hover template
-        fig_category.update_traces(
-            hovertemplate='%{customdata[0]}<extra></extra>'
-        )
-        
-        fig_category.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            font=dict(family="Inter", size=12),
-            title_font_size=16,
-            xaxis=dict(gridcolor='lightgray'),
-            yaxis=dict(gridcolor='lightgray')
-        )
-        
-        st.plotly_chart(fig_category, use_container_width=True)
-        
-        # Category descriptions table
-        st.markdown("##### 🏷️ Category Descriptions")
-        
-        # Create a nice table with category descriptions
-        desc_data = []
-        for cat, desc in category_descriptions.items():
-            if cat in category_summary['category'].values:
-                cat_info = category_summary[category_summary['category'] == cat].iloc[0]
-                desc_data.append({
-                    'Category': cat,
-                    'Description': desc,
-                    'Total Importance (%)': f"{cat_info['Total_Importance']:.1f}%",
-                    'Feature Count': int(cat_info['Feature_Count']),
-                    'Avg Importance (%)': f"{cat_info['Mean_Importance']:.1f}%"
-                })
-        
-        desc_df = pd.DataFrame(desc_data)
-        st.dataframe(desc_df, use_container_width=True, hide_index=True)
-        
-        # 4. Feature Dictionary with Descriptions
-        st.markdown("#### 📖 Feature Dictionary")
-        st.markdown("Explore detailed descriptions of all features used in the model:")
-        
-        # Create feature descriptions dictionary
-        feature_descriptions = create_feature_descriptions()
-        
-        # Create dropdown with all features
-        all_features = sorted(feature_df['feature'].tolist())
-        selected_feature = st.selectbox(
-            "Select a feature to learn more:",
-            options=all_features,
-            index=0,
-            help="Choose any feature from the model to see its detailed description"
-        )
-        
-        # Display feature information
-        if selected_feature:
-            # Get importance rank and value
-            feature_rank = feature_df[feature_df['feature'] == selected_feature].index[0] + 1
-            feature_importance = feature_df[feature_df['feature'] == selected_feature]['importance_pct'].iloc[0]
-            feature_category = feature_df[feature_df['feature'] == selected_feature]['category'].iloc[0]
-            
-            # Create info card
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Importance Rank", f"#{feature_rank}", help=f"Rank out of {len(feature_df)} features")
-            with col2:
-                st.metric("Importance Score", f"{feature_importance:.2f}%", help="Percentage of total model importance")
-            with col3:
-                st.metric("Category", feature_category, help="Feature category classification")
-            
-            # Get description
-            description = get_feature_description(selected_feature, feature_descriptions)
-            
-            # Display description in an info box
-            st.info(f"**{selected_feature}**\n\n{description}")
-            
-            # Show related features if available
-            related_features = get_related_features(selected_feature, all_features)
-            if related_features:
-                st.markdown("**Related Features:**")
-                for related in related_features[:5]:  # Show top 5 related
-                    related_importance = feature_df[feature_df['feature'] == related]['importance_pct'].iloc[0]
-                    st.markdown(f"• {related} ({related_importance:.2f}%)")
-        
-        # Feature search functionality
-        st.markdown("#### 🔍 Feature Search")
-        search_term = st.text_input(
-            "Search features by name or keyword:",
-            placeholder="e.g., 'RT', 'Charge', 'Area', 'log'",
-            help="Search for features containing specific terms"
-        )
-        
-        if search_term:
-            matching_features = feature_df[feature_df['feature'].str.contains(search_term, case=False)].copy()
-            if len(matching_features) > 0:
-                st.markdown(f"**Found {len(matching_features)} matching features:**")
-                
-                # Create a compact table showing search results
-                display_search = matching_features[['feature', 'importance_pct', 'category']].head(20)
-                display_search = display_search.rename(columns={
-                    'feature': 'Feature Name',
-                    'importance_pct': 'Importance (%)',
-                    'category': 'Category'
-                })
-                
-                st.dataframe(
-                    display_search,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.warning(f"No features found containing '{search_term}'")
-        
-    
-    except Exception as e:
-        st.error(f"❌ Error displaying feature importance analysis: {str(e)}")
-    
-    # Display feature importance data table
-    if csv_available:
-        st.markdown("#### 📊 Feature Importance Data")
-        
+    else:
         try:
-            feature_df = pd.read_csv(feature_csv_path)
-            
-            # Filter out zero importance features for cleaner display
-            feature_df = feature_df[feature_df['importance'] > 0].copy()
-            
-            if len(feature_df) > 0:
+            # Load feature importance data with caching
+            feature_df = load_feature_importance_csv(feature_csv_path)
+            if feature_df is None:
+                st.warning("Feature importance data could not be loaded.")
+            elif len(feature_df) == 0:
+                st.info("All features have zero importance in this model.")
+            else:
                 # Sort by importance descending
                 feature_df = feature_df.sort_values('importance', ascending=False)
-                
+
                 # Format importance as percentage
                 feature_df['importance_pct'] = (feature_df['importance'] * 100).round(2)
-                
+                feature_df_loaded = True
+        except Exception as e:
+            st.error(f"❌ Error displaying feature importance analysis: {str(e)}")
+
+    # SHAP Feature Importance Analysis assets
+    shap_data_path = os.path.join(feature_analysis_dir, "shap_data.json")
+    shap_beeswarm_path = os.path.join(feature_analysis_dir, "shap_summary_beeswarm.png")
+    shap_bar_path = os.path.join(feature_analysis_dir, "shap_importance_bar.png")
+
+    if os.path.exists(shap_data_path):
+        st.markdown("#### 🐝 SHAP Feature Importance Analysis")
+
+        # Use interactive plots - pass current color scheme to ensure plot updates
+        current_scheme = st.session_state.get('selected_color_scheme', 'Default')
+        create_interactive_shap_plots(shap_data_path, current_scheme)
+
+    elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
+        st.markdown("####  SHAP Feature Importance Analysis (Static)")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if os.path.exists(shap_beeswarm_path):
+                st.markdown("**SHAP Beeswarm Summary Plot**")
+                st.image(shap_beeswarm_path, use_container_width=True)
+            else:
+                st.info("SHAP beeswarm plot not available")
+
+        with col2:
+            if os.path.exists(shap_bar_path):
+                st.markdown("**SHAP Feature Importance**")
+                st.image(shap_bar_path, use_container_width=True)
+            else:
+                st.info("SHAP bar plot not available")
+
+    if feature_df_loaded:
+        try:
+            st.markdown("#### 📈 Interactive Feature Importance Visualizations")
+
+            # 1. Top 20 Feature Importance Bar Chart (Interactive)
+            top_20 = feature_df.head(20).copy()
+
+            # Get current colors for consistency
+            current_colors = get_current_colors()
+
+            fig_bar = px.bar(
+                top_20,
+                x='importance_pct',
+                y='feature',
+                orientation='h',
+                title='Top 20 Most Important Features',
+                labels={'importance_pct': 'Importance (%)', 'feature': 'Feature'},
+                color='importance_pct',
+                color_continuous_scale=current_colors['feature_gradient']
+            )
+
+            fig_bar.update_layout(
+                height=600,
+                yaxis={'categoryorder': 'total ascending', 'gridcolor': current_colors['grid']},
+                plot_bgcolor=current_colors['background'],
+                paper_bgcolor=current_colors['background'],
+                font=dict(family="Inter", size=12, color=current_colors['text']),
+                title_font_size=16,
+                title_font_color=current_colors['text'],
+                xaxis=dict(gridcolor=current_colors['grid']),
+                coloraxis_colorbar=dict(
+                    title=dict(text="Importance (%)", side="right"),
+                    thickness=12,
+                    len=0.7
+                )
+            )
+
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+            # Add explanatory note about different importance methods
+            st.info("""
+            ℹ️ **Note**: The visualizations above and below use different importance calculation methods:
+            - **XGBoost Importance** (above): Measures the improvement in accuracy brought by a feature to the branches it is on
+            - **SHAP Values** (below): Measures the average contribution of each feature to individual predictions
+            """)
+
+            # 3. Feature Categories Analysis (if we can detect patterns)
+            st.markdown("#### 🔍 Feature Category Analysis")
+
+            # Categorize features using cached function for performance
+            feature_categories = categorize_features(feature_df['feature'].tolist())
+            feature_df['category'] = feature_df['feature'].map(feature_categories).fillna('Other Features')
+
+            # Use module-level constant for category descriptions
+            category_descriptions = FEATURE_CATEGORY_DESCRIPTIONS
+
+            # Category importance summary
+            category_summary = feature_df.groupby('category').agg({
+                'importance_pct': ['sum', 'mean', 'count']
+            }).round(2)
+            category_summary.columns = ['Total_Importance', 'Mean_Importance', 'Feature_Count']
+            category_summary = category_summary.reset_index().sort_values('Total_Importance', ascending=False)
+
+            # Add descriptions for hover text
+            category_summary['Description'] = category_summary['category'].map(category_descriptions)
+            category_summary['Hover_Text'] = (
+                '<b>' + category_summary['category'] + '</b><br>' +
+                category_summary['Description'] + '<br><br>' +
+                '<b>Total Importance:</b> ' + category_summary['Total_Importance'].astype(str) + '%<br>' +
+                '<b>Feature Count:</b> ' + category_summary['Feature_Count'].astype(str) + '<br>' +
+                '<b>Average Importance:</b> ' + category_summary['Mean_Importance'].astype(str) + '%'
+            )
+
+            fig_category = px.bar(
+                category_summary,
+                x='category',
+                y='Total_Importance',
+                title='Feature Importance by Category',
+                labels={'category': 'Feature Category', 'Total_Importance': 'Total Importance (%)'},
+                color='Total_Importance',
+                color_continuous_scale=CHART_COLORS['feature_gradient'],
+                hover_data={'Total_Importance': ':.1f', 'Feature_Count': True, 'Mean_Importance': ':.1f'},
+                custom_data=['Hover_Text']
+            )
+
+            # Update hover template
+            fig_category.update_traces(
+                hovertemplate='%{customdata[0]}<extra></extra>'
+            )
+
+            fig_category.update_layout(
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                font=dict(family="Inter", size=12),
+                title_font_size=16,
+                xaxis=dict(gridcolor='lightgray'),
+                yaxis=dict(gridcolor='lightgray')
+            )
+
+            st.plotly_chart(fig_category, use_container_width=True)
+
+            # Category descriptions table
+            st.markdown("##### 🏷️ Category Descriptions")
+
+            # Create a nice table with category descriptions
+            desc_data = []
+            for cat, desc in category_descriptions.items():
+                if cat in category_summary['category'].values:
+                    cat_info = category_summary[category_summary['category'] == cat].iloc[0]
+                    desc_data.append({
+                        'Category': cat,
+                        'Description': desc,
+                        'Total Importance (%)': f"{cat_info['Total_Importance']:.1f}%",
+                        'Feature Count': int(cat_info['Feature_Count']),
+                        'Avg Importance (%)': f"{cat_info['Mean_Importance']:.1f}%"
+                    })
+
+            desc_df = pd.DataFrame(desc_data)
+            st.dataframe(desc_df, use_container_width=True, hide_index=True)
+
+            # 4. Feature Dictionary with Descriptions
+            st.markdown("#### 📖 Feature Dictionary")
+            st.markdown("Explore detailed descriptions of all features used in the model:")
+
+            # Create feature descriptions dictionary
+            feature_descriptions = create_feature_descriptions()
+
+            # Create dropdown with all features
+            all_features = sorted(feature_df['feature'].tolist())
+            selected_feature = st.selectbox(
+                "Select a feature to learn more:",
+                options=all_features,
+                index=0,
+                help="Choose any feature from the model to see its detailed description"
+            )
+
+            # Display feature information
+            if selected_feature:
+                # Get importance rank and value
+                feature_rank = feature_df[feature_df['feature'] == selected_feature].index[0] + 1
+                feature_importance = feature_df[feature_df['feature'] == selected_feature]['importance_pct'].iloc[0]
+                feature_category = feature_df[feature_df['feature'] == selected_feature]['category'].iloc[0]
+
+                # Create info card
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Importance Rank", f"#{feature_rank}", help=f"Rank out of {len(feature_df)} features")
+                with col2:
+                    st.metric("Importance Score", f"{feature_importance:.2f}%", help="Percentage of total model importance")
+                with col3:
+                    st.metric("Category", feature_category, help="Feature category classification")
+
+                # Get description
+                description = get_feature_description(selected_feature, feature_descriptions)
+
+                # Display description in an info box
+                st.info(f"**{selected_feature}**\n\n{description}")
+
+                # Show related features if available
+                related_features = get_related_features(selected_feature, all_features)
+                if related_features:
+                    st.markdown("**Related Features:**")
+                    for related in related_features[:5]:  # Show top 5 related
+                        related_importance = feature_df[feature_df['feature'] == related]['importance_pct'].iloc[0]
+                        st.markdown(f"• {related} ({related_importance:.2f}%)")
+
+            # Feature search functionality
+            st.markdown("#### 🔍 Feature Search")
+            search_term = st.text_input(
+                "Search features by name or keyword:",
+                placeholder="e.g., 'RT', 'Charge', 'Area', 'log'",
+                help="Search for features containing specific terms"
+            )
+
+            if search_term:
+                matching_features = feature_df[feature_df['feature'].str.contains(search_term, case=False)].copy()
+                if len(matching_features) > 0:
+                    st.markdown(f"**Found {len(matching_features)} matching features:**")
+
+                    # Create a compact table showing search results
+                    display_search = matching_features[['feature', 'importance_pct', 'category']].head(20)
+                    display_search = display_search.rename(columns={
+                        'feature': 'Feature Name',
+                        'importance_pct': 'Importance (%)',
+                        'category': 'Category'
+                    })
+
+                    st.dataframe(
+                        display_search,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.warning(f"No features found containing '{search_term}'")
+        except Exception as e:
+            st.error(f"❌ Error displaying feature importance analysis: {str(e)}")
+
+        # Display feature importance data table
+        st.markdown("#### 📊 Feature Importance Data")
+
+        try:
+            feature_df_table = feature_df[feature_df['importance'] > 0].copy()
+
+            if len(feature_df_table) > 0:
+                feature_df_table = feature_df_table.sort_values('importance', ascending=False)
+                feature_df_table['importance_pct'] = (feature_df_table['importance'] * 100).round(2)
+
                 # Show top 20 in table
-                top_features = feature_df.head(20).copy()
-                
+                top_features = feature_df_table.head(20).copy()
+
                 col1, col2 = st.columns([2, 1])
-                
+
                 with col1:
                     st.dataframe(
                         top_features[['feature', 'importance_pct']],
@@ -3097,14 +3092,14 @@ def display_feature_importance_tab(results_dir: str):
                         },
                         hide_index=True
                     )
-                
+
                 with col2:
                     st.metric("Total Features", len(feature_df))
-                    st.metric("Non-zero Features", len(feature_df[feature_df['importance'] > 0]))
+                    st.metric("Non-zero Features", len(feature_df_table))
                     st.metric("Top Feature", f"{top_features.iloc[0]['importance_pct']:.2f}%")
-                
+
                 # Download option for full feature importance data
-                csv_data = feature_df.to_csv(index=False)
+                csv_data = feature_df.sort_values('importance', ascending=False).to_csv(index=False)
                 st.download_button(
                     label="📄 Download Feature Importance CSV",
                     data=csv_data,
@@ -3113,14 +3108,9 @@ def display_feature_importance_tab(results_dir: str):
                 )
             else:
                 st.info("All features have zero importance in this model.")
-                
         except Exception as e:
             st.error(f"❌ Error loading feature importance data: {str(e)}")
-    
 
-# -----------------------------------------------
-# 📊 RESULTS DISPLAY
-# -----------------------------------------------
 
 def display_results():
     """Display analysis results with interactive visualizations."""
