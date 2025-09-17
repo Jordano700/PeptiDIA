@@ -36,6 +36,7 @@ import os
 from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
 import shap
 import json
 from typing import List, Dict, Optional, Callable, Tuple
@@ -44,27 +45,83 @@ from .dataset_utils import get_files_for_configured_method, discover_available_f
 
 warnings.filterwarnings('ignore')
 
-# Set style for professional Nature-style plots
+# Set style for professional Nature-style plots with light, clinical look
 plt.style.use('seaborn-v0_8-whitegrid')
+plt.rcParams.update({
+    'font.size': 11,
+    'axes.titlesize': 14,
+    'axes.titleweight': 'bold',
+    'axes.labelsize': 12,
+    'axes.labelweight': 'bold',
+    'axes.edgecolor': '#CBD5F5',
+    'axes.labelcolor': '#1F2937',
+    'xtick.color': '#1F2937',
+    'ytick.color': '#1F2937',
+    'grid.alpha': 0.4,
+    'grid.linewidth': 0.6
+})
 
-# Nature-style color palette (professional scientific colors)
+# Unified PeptiDIA palette (blue & indigo focused)
 NATURE_COLORS = {
-    'primary': '#2E86AB',      # Professional blue
-    'secondary': '#A23B72',    # Deep magenta  
-    'tertiary': '#F18F01',     # Amber orange
-    'quaternary': '#C73E1D',   # Deep red
-    'accent1': '#5D737E',      # Steel blue-gray
-    'accent2': '#64A6BD',      # Light blue
-    'success': '#4A7C59',      # Forest green
-    'warning': '#F4A261',      # Warm orange
-    'neutral': '#6C757D'       # Professional gray
+    'primary': '#1D4ED8',      # Deep royal blue
+    'secondary': '#6366F1',    # Indigo
+    'tertiary': '#4338CA',     # Rich violet-blue
+    'quaternary': '#7C3AED',   # Vivid purple accent
+    'accent1': '#3B82F6',      # Bright blue
+    'accent2': '#8B5CF6',      # Soft lavender
+    'success': '#38BDF8',      # Sky blue for positive trends
+    'warning': '#A5B4FC',      # Muted periwinkle for reference lines
+    'neutral': '#6B7280'       # Neutral typography
 }
 
-# Set color palette for consistency
-nature_palette = [NATURE_COLORS['primary'], NATURE_COLORS['secondary'], 
-                 NATURE_COLORS['tertiary'], NATURE_COLORS['quaternary'],
-                 NATURE_COLORS['accent1'], NATURE_COLORS['accent2']]
+# Set color palette for consistency across Seaborn defaults
+nature_palette = [
+    NATURE_COLORS['primary'],
+    NATURE_COLORS['secondary'],
+    NATURE_COLORS['tertiary'],
+    NATURE_COLORS['quaternary'],
+    NATURE_COLORS['accent1'],
+    NATURE_COLORS['accent2']
+]
 sns.set_palette(nature_palette)
+
+MATPLOT_THEME = {
+    'background': '#F9FAFB',   # Figure background
+    'panel': '#FFFFFF',        # Axes background panels
+    'grid': '#E5E7EB',
+    'border': '#CBD5F5',
+    'text': '#1F2937',
+    'muted_text': '#6B7280'
+}
+
+FEATURE_CMAP = LinearSegmentedColormap.from_list(
+    'peptidia_feature',
+    [NATURE_COLORS['primary'], NATURE_COLORS['secondary'], NATURE_COLORS['accent2']]
+)
+
+
+def _style_matplotlib_axes(ax, *, title=None, xlabel=None, ylabel=None, show_grid=True):
+    """Apply a consistent professional theme to a Matplotlib axis."""
+
+    ax.set_facecolor(MATPLOT_THEME['panel'])
+    for spine in ax.spines.values():
+        spine.set_color(MATPLOT_THEME['border'])
+        spine.set_linewidth(0.8)
+
+    if show_grid:
+        ax.grid(True, color=MATPLOT_THEME['grid'], linestyle='--', linewidth=0.6, alpha=0.6)
+    else:
+        ax.grid(False)
+
+    if title:
+        ax.set_title(title, fontsize=14, fontweight='bold', color=MATPLOT_THEME['text'])
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=12, fontweight='bold', color=MATPLOT_THEME['text'])
+    if ylabel:
+        ax.set_ylabel(ylabel, fontsize=12, fontweight='bold', color=MATPLOT_THEME['text'])
+
+    ax.tick_params(colors=MATPLOT_THEME['text'])
+
 
 class PeptideValidatorAPI:
     """API interface for peptide validation analysis."""
@@ -1191,87 +1248,148 @@ class PeptideValidatorAPI:
         results_df = pd.DataFrame(results)
         
         # 1. Method comparison plot
-        plt.figure(figsize=(15, 10))
-        
-        # FDR vs Additional Peptides
-        plt.subplot(2, 3, 1)
-        plt.bar(range(len(results_df)), results_df['Additional_Peptides'], 
-               color=NATURE_COLORS['primary'], alpha=0.8)
-        plt.xlabel('Target FDR Level', fontweight='bold', fontsize=12)
-        plt.ylabel('Additional Peptides', fontweight='bold', fontsize=12)
-        plt.title('Additional Peptides by Target FDR', fontweight='bold', fontsize=14)
-        plt.xticks(range(len(results_df)), [f"{x:.1f}%" for x in results_df['Target_FDR']])
-        plt.grid(True, alpha=0.3)
-        
-        # FDR Control
-        plt.subplot(2, 3, 2)
-        plt.plot(results_df['Target_FDR'], results_df['Actual_FDR'], 
-                'o-', color=NATURE_COLORS['secondary'], linewidth=3, markersize=8, label='Actual FDR')
-        plt.plot(results_df['Target_FDR'], results_df['Target_FDR'], 
-                '--', color=NATURE_COLORS['quaternary'], alpha=0.7, linewidth=2, label='Perfect control')
-        plt.xlabel('Target FDR (%)', fontweight='bold', fontsize=12)
-        plt.ylabel('Actual FDR (%)', fontweight='bold', fontsize=12)
-        plt.title('FDR Control Precision', fontweight='bold', fontsize=14)
-        plt.legend(fontsize=10)
-        plt.grid(True, alpha=0.3)
-        
-        # Recovery percentage
-        plt.subplot(2, 3, 3)
-        plt.plot(results_df['Target_FDR'], results_df['Recovery_Pct'], 
-                'o-', color=NATURE_COLORS['success'], linewidth=3, markersize=8)
-        plt.xlabel('Target FDR (%)', fontweight='bold', fontsize=12)
-        plt.ylabel('Recovery Percentage (%)', fontweight='bold', fontsize=12)
-        plt.title('Peptide Recovery Rate', fontweight='bold', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        
-        # Performance vs FDR trade-off
-        plt.subplot(2, 3, 4)
-        scatter = plt.scatter(results_df['Actual_FDR'], results_df['Additional_Peptides'], 
-                            c=results_df['Target_FDR'], cmap='viridis', s=100, alpha=0.8)
-        plt.colorbar(scatter, label='Target FDR (%)')
-        plt.xlabel('Actual FDR (%)', fontweight='bold', fontsize=12)
-        plt.ylabel('Additional Peptides', fontweight='bold', fontsize=12)
-        plt.title('Performance vs FDR Trade-off', fontweight='bold', fontsize=14)
-        plt.grid(True, alpha=0.3)
-        
-        # Efficiency plot
-        plt.subplot(2, 3, 5)
+        fig = plt.figure(figsize=(15, 10), facecolor=MATPLOT_THEME['background'])
+        gs = fig.add_gridspec(2, 3, hspace=0.32, wspace=0.28)
+        fig.suptitle(
+            'Comprehensive Performance Overview',
+            fontsize=18,
+            fontweight='bold',
+            color=MATPLOT_THEME['text'],
+            y=0.97
+        )
+
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.bar(
+            range(len(results_df)),
+            results_df['Additional_Peptides'],
+            color=NATURE_COLORS['primary'],
+            alpha=0.9,
+            edgecolor='none'
+        )
+        ax1.set_xticks(range(len(results_df)))
+        ax1.set_xticklabels(
+            [f"{x:.1f}%" for x in results_df['Target_FDR']],
+            rotation=40,
+            ha='right'
+        )
+        _style_matplotlib_axes(
+            ax1,
+            title='Additional Peptides by Target FDR',
+            xlabel='Target FDR Level (%)',
+            ylabel='Additional Peptides'
+        )
+
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.plot(
+            results_df['Target_FDR'],
+            results_df['Actual_FDR'],
+            marker='o',
+            linestyle='-',
+            color=NATURE_COLORS['secondary'],
+            linewidth=2.5,
+            markersize=7,
+            markerfacecolor=NATURE_COLORS['secondary'],
+            markeredgecolor=MATPLOT_THEME['panel'],
+            label='Actual FDR'
+        )
+        ax2.plot(
+            results_df['Target_FDR'],
+            results_df['Target_FDR'],
+            linestyle='--',
+            color=NATURE_COLORS['warning'],
+            linewidth=2,
+            alpha=0.8,
+            label='Perfect Control'
+        )
+        _style_matplotlib_axes(
+            ax2,
+            title='FDR Control Precision',
+            xlabel='Target FDR (%)',
+            ylabel='Actual FDR (%)'
+        )
+        legend = ax2.legend(
+            fontsize=9,
+            frameon=True,
+            fancybox=True,
+            framealpha=0.95
+        )
+        legend.get_frame().set_facecolor(MATPLOT_THEME['panel'])
+        legend.get_frame().set_edgecolor(MATPLOT_THEME['border'])
+
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.plot(
+            results_df['Target_FDR'],
+            results_df['Recovery_Pct'],
+            marker='o',
+            linestyle='-',
+            color=NATURE_COLORS['success'],
+            linewidth=2.5,
+            markersize=7,
+            markerfacecolor=NATURE_COLORS['success'],
+            markeredgecolor=MATPLOT_THEME['panel']
+        )
+        _style_matplotlib_axes(
+            ax3,
+            title='Peptide Recovery Rate',
+            xlabel='Target FDR (%)',
+            ylabel='Recovery Percentage (%)'
+        )
+
+        ax4 = fig.add_subplot(gs[1, 0])
+        scatter = ax4.scatter(
+            results_df['Actual_FDR'],
+            results_df['Additional_Peptides'],
+            c=results_df['Target_FDR'],
+            cmap=FEATURE_CMAP,
+            s=90,
+            alpha=0.85,
+            edgecolor=MATPLOT_THEME['panel'],
+            linewidth=0.5
+        )
+        _style_matplotlib_axes(
+            ax4,
+            title='Performance vs FDR Trade-off',
+            xlabel='Actual FDR (%)',
+            ylabel='Additional Peptides'
+        )
+
+        ax5 = fig.add_subplot(gs[1, 1])
         efficiency = results_df['Additional_Peptides'] / results_df['Actual_FDR']
         efficiency = efficiency.replace([np.inf, -np.inf], np.nan)
-        plt.bar(range(len(results_df)), efficiency, 
-               color=NATURE_COLORS['tertiary'], alpha=0.8)
-        plt.xlabel('Target FDR Level', fontweight='bold', fontsize=12)
-        plt.ylabel('Peptides per FDR%', fontweight='bold', fontsize=12)
-        plt.title('Discovery Efficiency', fontweight='bold', fontsize=14)
-        plt.xticks(range(len(results_df)), [f"{x:.1f}%" for x in results_df['Target_FDR']])
-        plt.grid(True, alpha=0.3)
-        
-        # Summary statistics
-        plt.subplot(2, 3, 6)
-        plt.axis('off')
-        best_result = results_df.loc[results_df['Additional_Peptides'].idxmax()]
-        stats_text = f"""
-ANALYSIS SUMMARY
+        ax5.bar(
+            range(len(results_df)),
+            efficiency,
+            color=NATURE_COLORS['tertiary'],
+            alpha=0.9,
+            edgecolor='none'
+        )
+        ax5.set_xticks(range(len(results_df)))
+        ax5.set_xticklabels(
+            [f"{x:.1f}%" for x in results_df['Target_FDR']],
+            rotation=40,
+            ha='right'
+        )
+        _style_matplotlib_axes(
+            ax5,
+            title='Discovery Efficiency',
+            xlabel='Target FDR Level (%)',
+            ylabel='Peptides per FDR%'
+        )
 
-Best Performance:
-• {best_result['Additional_Peptides']} additional peptides
-• {best_result['Actual_FDR']:.1f}% actual FDR
-• {best_result['Recovery_Pct']:.1f}% recovery rate
+        colorbar_ax = fig.add_axes([0.88, 0.14, 0.015, 0.29])
+        cbar = fig.colorbar(scatter, cax=colorbar_ax)
+        cbar.ax.set_ylabel('Target FDR (%)', color=MATPLOT_THEME['text'])
+        cbar.ax.tick_params(colors=MATPLOT_THEME['text'], labelsize=10)
+        if cbar.outline is not None:
+            cbar.outline.set_edgecolor(MATPLOT_THEME['border'])
 
-FDR Control Quality:
-• Mean absolute error: {np.mean(np.abs(results_df['Actual_FDR'] - results_df['Target_FDR'])):.2f}%
-• Max peptides at ≤5% FDR: {results_df[results_df['Actual_FDR'] <= 5.0]['Additional_Peptides'].max() if len(results_df[results_df['Actual_FDR'] <= 5.0]) > 0 else 0}
-
-Model Performance:
-• Total evaluations: {len(results_df)}
-• Valid results (≤5% FDR): {len(results_df[results_df['Actual_FDR'] <= 5.0])}
-        """
-        plt.text(0.05, 0.95, stats_text.strip(), transform=plt.gca().transAxes, 
-                fontsize=10, verticalalignment='top', fontfamily='monospace',
-                bbox=dict(boxstyle="round,pad=0.3", facecolor=NATURE_COLORS['accent2'], alpha=0.3))
-        
-        plt.tight_layout()
-        plt.savefig(f"{results_dir}/plots/comprehensive_analysis.png", dpi=300, bbox_inches='tight')
+        fig.tight_layout(rect=[0, 0, 0.87, 0.94])
+        plt.savefig(
+            f"{results_dir}/plots/comprehensive_analysis.png",
+            dpi=300,
+            bbox_inches='tight',
+            facecolor=MATPLOT_THEME['background']
+        )
         plt.close()
         
         # 2. Feature importance analysis (if model provided)
@@ -1444,30 +1562,38 @@ Model Performance:
         # Plot top 20 features
         top_features = feature_importance_df.tail(20)
         
-        plt.figure(figsize=(12, 10))
-        
-        # Create gradient colors using Nature color scheme
-        colors = [NATURE_COLORS['primary'] if i < 10 else NATURE_COLORS['secondary'] 
-                  for i in range(len(top_features))]
-        
-        bars = plt.barh(range(len(top_features)), top_features['importance'], 
-                       alpha=0.85, color=colors, edgecolor='white', linewidth=0.5)
-        
-        plt.yticks(range(len(top_features)), top_features['feature'], fontsize=10)
-        plt.xlabel('Feature Importance', fontweight='bold', fontsize=12)
-        plt.title('Top 20 Most Important Features', fontweight='bold', fontsize=14)
-        plt.grid(True, alpha=0.3, axis='x')
-        
-        # Professional styling
-        ax = plt.gca()
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.set_facecolor('#FAFAFA')
-        
+        fig, ax = plt.subplots(figsize=(12, 10), facecolor=MATPLOT_THEME['background'])
+
+        gradient_colors = [FEATURE_CMAP(i) for i in np.linspace(0.2, 0.9, len(top_features))]
+        bars = ax.barh(
+            range(len(top_features)),
+            top_features['importance'],
+            color=gradient_colors,
+            edgecolor=MATPLOT_THEME['border'],
+            linewidth=0.6,
+            alpha=0.95
+        )
+
+        ax.set_yticks(range(len(top_features)))
+        ax.set_yticklabels(top_features['feature'], fontsize=10, color=MATPLOT_THEME['text'])
+        ax.invert_yaxis()
+        _style_matplotlib_axes(
+            ax,
+            title='Top 20 Most Important Features',
+            xlabel='Feature Importance',
+            ylabel=None,
+            show_grid=True
+        )
+        ax.grid(axis='y', alpha=0.15)
+
         plt.tight_layout()
-        plt.savefig(f"{results_dir}/feature_analysis/feature_importance_top20.png", 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
+        plt.savefig(
+            f"{results_dir}/feature_analysis/feature_importance_top20.png",
+            dpi=300,
+            bbox_inches='tight',
+            facecolor=MATPLOT_THEME['background']
+        )
+        plt.close(fig)
         
         print("✅ Feature importance plot and CSV created successfully")
 
@@ -1493,12 +1619,37 @@ Model Performance:
             if base_model is None:
                 print("⚠️ Could not extract XGBoost model for SHAP analysis")
                 print(f"   Model type: {type(model)}")
-                return
+                from xgboost import XGBClassifier as _XGBClassifier
+                fallback_model = None
+                if isinstance(model, CalibratedClassifierCV):
+                    clf = getattr(model, 'calibrated_classifiers_', None)
+                    if clf:
+                        fallback_model = getattr(clf[0], 'base_estimator', None)
+                if fallback_model is None and isinstance(model, VotingClassifier):
+                    fallback_model = getattr(model, 'estimators_', [None])[0]
+                if fallback_model is None and isinstance(model, _XGBClassifier):
+                    fallback_model = model
+                if fallback_model is None:
+                    fallback_model = getattr(model, 'estimator', None)
+                if fallback_model is None:
+                    fallback_model = getattr(model, 'base_estimator', None)
+                if fallback_model is None:
+                    print("⚠️ SHAP analysis skipped - no compatible model found")
+                    return
+                base_model = fallback_model
             
-            # Calculate SHAP values (only for fitted XGB)
+            # Ensure model is fitted before computing SHAP values
             if not hasattr(base_model, 'classes_'):
-                print("⚠️ Base XGBoost model not fitted; skipping SHAP analysis")
-                return
+                try:
+                    fallback_model = getattr(model, 'base_estimator', None)
+                    if fallback_model is not None and hasattr(fallback_model, 'classes_'):
+                        base_model = fallback_model
+                    else:
+                        print("⚠️ Base XGBoost model not fitted; skipping SHAP analysis")
+                        return
+                except Exception:
+                    print("⚠️ Base XGBoost model not fitted; skipping SHAP analysis")
+                    return
             explainer = shap.TreeExplainer(base_model)
             shap_values = explainer.shap_values(X_sample)
             

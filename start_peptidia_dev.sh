@@ -1,10 +1,9 @@
 #!/bin/bash
-echo "🧬 Starting PeptiDIA on a GUARANTEED FRESH development port..."
+## Minimal startup output for development
 cd "$(dirname "$0")"
 
-# Kill any existing Streamlit processes first
-echo "🧹 Cleaning up existing processes..."
-pkill -f "streamlit run" 2>/dev/null
+# Quietly stop any existing Streamlit processes (if any)
+pkill -f "streamlit run" 2>/dev/null || true
 
 # Generate a truly unique port using timestamp + random
 generate_unique_port() {
@@ -25,7 +24,7 @@ generate_unique_port() {
     echo $unique_port
 }
 
-# Get guaranteed unique port
+# Pick an available development port
 DEV_PORT=$(generate_unique_port)
 
 # Determine Python executable
@@ -37,10 +36,8 @@ else
     PY="python"
 fi
 
-echo "🚀 Starting PeptiDIA on GUARANTEED FRESH port $DEV_PORT..."
-echo "📝 Access your app at: http://localhost:$DEV_PORT"
-echo "💡 Brand new port every time = Zero cache = Always fresh changes!"
-echo "🎯 Port $DEV_PORT has never been used before - 100% fresh!"
+echo "Starting PeptiDIA..."
+echo "Access your app at: http://localhost:$DEV_PORT"
 
 # Start Streamlit on the fresh port
 "$PY" -m streamlit run src/peptidia/web/streamlit_app.py \
