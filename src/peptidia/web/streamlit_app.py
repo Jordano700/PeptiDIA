@@ -2591,21 +2591,14 @@ def create_interactive_shap_plots(shap_data_path, color_scheme=None):
     try:
         shap_data = load_shap_data(shap_data_path)
         if shap_data is None:
-            return None, None
-        
-        shap_values = shap_data['shap_values']
-        feature_values = shap_data['feature_values']
+            return None
+
         feature_names = shap_data['feature_names']
         feature_importance = shap_data['feature_importance']
-        
+
         # Get top 12 features by importance for cleaner visualization
         top_indices = np.argsort(feature_importance)[-12:][::-1]
-        
-        # Create single bidirectional bar plot
-        st.markdown("**Feature Importance (SHAP Impact Analysis)**")
-        st.markdown("*Bars pointing **right (→)** = when this feature has HIGH values, the model predicts the peptide is MORE LIKELY to be real*")
-        st.markdown("*Bars pointing **left (←)** = when this feature has HIGH values, the model predicts the peptide is LESS LIKELY to be real*")
-        
+
         # Get mean SHAP values for bidirectional bars
         mean_shap_values = None
         try:
@@ -2613,17 +2606,21 @@ def create_interactive_shap_plots(shap_data_path, color_scheme=None):
                 raw_shap_data = json.load(f)
             if 'mean_shap_values' in raw_shap_data:
                 mean_shap_values = np.array(raw_shap_data['mean_shap_values'])
-        except:
-            pass
-        
-        fig_bar = create_shap_bidirectional_plot(feature_importance, feature_names, top_indices, mean_shap_values)
-        st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
-        
-        return True
-        
+        except Exception:
+            mean_shap_values = None
+
+        fig_bar = create_shap_bidirectional_plot(
+            feature_importance,
+            feature_names,
+            top_indices,
+            mean_shap_values
+        )
+
+        return fig_bar
+
     except Exception as e:
         st.error(f"Error loading SHAP data: {str(e)}")
-        return False
+        return None
 
 def create_shap_beeswarm_plot(shap_values, feature_values, feature_names, top_indices):
     """Create interactive beeswarm-style SHAP plot."""
@@ -2844,9 +2841,22 @@ def display_feature_importance_tab(results_dir: str):
     if os.path.exists(shap_data_path):
         st.markdown("#### 🐝 SHAP Feature Importance Analysis")
 
-        # Use interactive plots - pass current color scheme to ensure plot updates
-        current_scheme = st.session_state.get('selected_color_scheme', 'Default')
-        create_interactive_shap_plots(shap_data_path, current_scheme)
+        with st.container():
+            st.markdown("**Feature Importance (SHAP Impact Analysis)**")
+            st.markdown(
+                "*Bars pointing **right (→)** mean high feature values increase the likelihood a peptide is real.*"
+            )
+            st.markdown(
+                "*Bars pointing **left (←)** mean high feature values decrease the likelihood a peptide is real.*"
+            )
+
+            current_scheme = st.session_state.get('selected_color_scheme', 'Default')
+            shap_fig = create_interactive_shap_plots(shap_data_path, current_scheme)
+
+            if shap_fig is not None:
+                st.plotly_chart(shap_fig, use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.info("SHAP data could not be visualized for this run.")
 
     elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
         st.markdown("####  SHAP Feature Importance Analysis (Static)")
