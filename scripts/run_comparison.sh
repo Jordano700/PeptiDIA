@@ -1,7 +1,7 @@
 #!/bin/bash
 # PeptiDIA vs DIA-NN Comparison Tool Launcher
 
-echo "📊 Starting PeptiDIA vs DIA-NN Comparison Tool..."
+echo "Starting PeptiDIA vs DIA-NN Comparison Tool..."
 
 # Check if virtual environment exists
 if [ ! -d "peptidia_env" ]; then

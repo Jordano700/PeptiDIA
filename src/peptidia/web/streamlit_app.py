@@ -594,23 +594,38 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     if not results or 'config' not in results:
         raise ValueError("No results/config available to build filtered DIA-NN CSV")
 
-    # Resolve result item and threshold
-    item = None
-    try:
-        if target_fdr is not None:
-            item = next((r for r in results.get('results', []) if float(r.get('Target_FDR')) == float(target_fdr)), None)
-    except Exception:
-        item = None
-    if item is None and results.get('results'):
-        # Fallback to max Additional_Peptides
+    # Resolve result item and threshold, using nearest-FDR match (robust to strings like "5.0%")
+    def _parse_fdr(v):
         try:
-            item = max(results['results'], key=lambda x: int(x.get('Additional_Peptides', 0)))
+            # Handles numeric, string, and strings with trailing %
+            return float(str(v).replace('%', '').strip())
         except Exception:
-            item = results['results'][0]
+            return None
+
+    item = None
+    results_list = results.get('results', []) or []
+    if target_fdr is not None and results_list:
+        tf = float(target_fdr)
+        # Choose the result with minimal absolute difference in FDR
+        parsed = [(_parse_fdr(r.get('Target_FDR')), r) for r in results_list]
+        parsed = [(f, r) for f, r in parsed if f is not None]
+        if parsed:
+            item = min(parsed, key=lambda fr: abs(fr[0] - tf))[1]
+
+    # Final fallback
+    if item is None and results_list:
+        try:
+            item = max(results_list, key=lambda x: int(x.get('Additional_Peptides', 0)))
+        except Exception:
+            item = results_list[0]
     if not item:
         raise ValueError("Could not determine threshold/result item")
 
-    threshold = float(item.get('Threshold', 0.5))
+    # Ensure numeric threshold
+    try:
+        threshold = float(item.get('Threshold', 0.5))
+    except Exception:
+        threshold = 0.5
     cfg = results.get('config', {})
     test_method = cfg.get('test_method')
     test_fdr = int(cfg.get('test_fdr', 50))
@@ -641,8 +656,23 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
         # Prefer explicit map if present
         seq_map = results.get('selected_sequences_by_fdr')
         if seq_map and target_fdr is not None:
-            # Keys may be str or float
+            # Keys may be str or float; also try nearest match for robustness
+            # Exact match first
             selected_sequences = seq_map.get(float(target_fdr)) or seq_map.get(str(target_fdr))
+            if selected_sequences is None:
+                # Nearest key by numeric distance
+                try:
+                    key_vals = []
+                    for k in seq_map.keys():
+                        try:
+                            key_vals.append((float(str(k).replace('%','').strip()), k))
+                        except Exception:
+                            continue
+                    if key_vals:
+                        nearest_key = min(key_vals, key=lambda kv: abs(kv[0] - float(target_fdr)))[1]
+                        selected_sequences = seq_map.get(nearest_key)
+                except Exception:
+                    pass
         if not selected_sequences and 'Selected_Sequences' in item:
             selected_sequences = item.get('Selected_Sequences')
         if selected_sequences is not None and len(selected_sequences) == 0:
@@ -1447,43 +1477,110 @@ def display_run_comparison():
     
     # Performance comparison charts
     st.markdown("### 📈 Performance Comparison")
-    
-    # Single chart focusing on peptides recovered
-    fig_peptides = px.bar(
-        comparison_df,
-        x='Run ID',
-        y='Best Peptides',
-        title='Additional Peptides Recovered by Configuration',
-        color='Best Peptides',
-        color_continuous_scale=CHART_COLORS['feature_gradient'],
-        text='Best Peptides'
-    )
-    fig_peptides.update_layout(
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        font=dict(family="Inter", size=12),
-        height=500
-    )
-    fig_peptides.update_traces(texttemplate='%{text}', textposition='outside')
-    st.plotly_chart(fig_peptides, use_container_width=True)
-    
-    # MCC comparison (if available)
-    mcc_data = comparison_df[comparison_df['Best MCC'] != 'N/A'].copy()
-    if len(mcc_data) > 1:
-        mcc_data['Best MCC Numeric'] = mcc_data['Best MCC'].astype(float)
-        
+
+    # Prepare data for grouped bar charts by FDR level
+    fdr_comparison_data = []
+    mcc_comparison_data = []
+
+    for run in selected_runs:
+        if 'full_results' in run and 'results' in run['full_results']:
+            results = run['full_results']['results']
+            run_id = run['run_id']
+
+            for result in results:
+                # Additional Peptides by FDR
+                fdr_comparison_data.append({
+                    'Run ID': run_id,
+                    'Target FDR (%)': result.get('Target_FDR', 0),
+                    'Additional Peptides': result.get('Additional_Peptides', 0)
+                })
+
+                # MCC by FDR (if available)
+                if 'MCC' in result and result['MCC'] not in [None, 'N/A', 0]:
+                    mcc_comparison_data.append({
+                        'Run ID': run_id,
+                        'Target FDR (%)': result.get('Target_FDR', 0),
+                        'MCC': result.get('MCC', 0)
+                    })
+
+    # Chart 1: Additional Peptides by FDR Level (grouped bar chart)
+    if fdr_comparison_data:
+        fdr_df = pd.DataFrame(fdr_comparison_data)
+
+        # Extended color palette for up to 10 models with distinct, easy-to-differentiate colors
+        comparison_colors = [
+            '#0EA5E9',  # Bright blue
+            '#8B5CF6',  # Vivid purple
+            '#EC4899',  # Hot pink
+            '#F59E0B',  # Amber
+            '#10B981',  # Emerald green
+            '#EF4444',  # Red
+            '#06B6D4',  # Cyan
+            '#F97316',  # Orange
+            '#6366F1',  # Indigo
+            '#84CC16'   # Lime green
+        ]
+
+        fig_peptides = px.bar(
+            fdr_df,
+            x='Target FDR (%)',
+            y='Additional Peptides',
+            color='Run ID',
+            barmode='group',
+            title='Additional Peptides Recovered by FDR Level',
+            color_discrete_sequence=comparison_colors
+        )
+        fig_peptides.update_layout(
+            plot_bgcolor='white',
+            paper_bgcolor='white',
+            font=dict(family="Inter", size=12),
+            height=600,
+            xaxis_title='Target FDR (%)',
+            yaxis_title='Additional Peptides',
+            legend_title='Model',
+            bargap=0.15,  # Gap between groups of bars (FDR levels)
+            bargroupgap=0.05  # Gap between bars within a group (models)
+        )
+        st.plotly_chart(fig_peptides, use_container_width=True)
+
+    # Chart 2: MCC by FDR Level (grouped bar chart)
+    if mcc_comparison_data:
+        mcc_df = pd.DataFrame(mcc_comparison_data)
+
+        # Use same extended color palette as peptides chart
+        comparison_colors = [
+            '#0EA5E9',  # Bright blue
+            '#8B5CF6',  # Vivid purple
+            '#EC4899',  # Hot pink
+            '#F59E0B',  # Amber
+            '#10B981',  # Emerald green
+            '#EF4444',  # Red
+            '#06B6D4',  # Cyan
+            '#F97316',  # Orange
+            '#6366F1',  # Indigo
+            '#84CC16'   # Lime green
+        ]
+
         fig_mcc = px.bar(
-            mcc_data,
-            x='Run ID',
-            y='Best MCC Numeric',
-            title='Best MCC Comparison',
-            color='Best MCC Numeric',
-            color_continuous_scale=CHART_COLORS['feature_gradient']
+            mcc_df,
+            x='Target FDR (%)',
+            y='MCC',
+            color='Run ID',
+            barmode='group',
+            title='MCC (Model Quality) by FDR Level',
+            color_discrete_sequence=comparison_colors
         )
         fig_mcc.update_layout(
             plot_bgcolor='white',
             paper_bgcolor='white',
-            font=dict(family="Inter", size=12)
+            font=dict(family="Inter", size=12),
+            height=600,
+            xaxis_title='Target FDR (%)',
+            yaxis_title='MCC',
+            legend_title='Model',
+            yaxis_range=[-0.1, 1.0],
+            bargap=0.15,  # Gap between groups of bars (FDR levels)
+            bargroupgap=0.05  # Gap between bars within a group (models)
         )
         st.plotly_chart(fig_mcc, use_container_width=True)
     
@@ -1896,10 +1993,23 @@ def show_training_interface():
             index=0,
             help="Single method to hold out for testing (prevents data leakage) - uses method-specific ground truth"
         )
-        
-        # Display the full selected method name
+
+        # Display the full selected method name with tooltip
         if test_method:
-            st.sidebar.markdown(f"**Selected:** `{test_method}`")
+            st.sidebar.markdown(f"""
+                <div title="{test_method}" style="
+                    background-color: #f0f2f6;
+                    padding: 8px;
+                    border-radius: 4px;
+                    margin-top: 5px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    cursor: help;
+                ">
+                    <span style="font-weight: 400;">Selected:</span> <code style="font-weight: 400;">{test_method}</code>
+                </div>
+            """, unsafe_allow_html=True)
     
     # Force validation - ensure test method is not in training methods
     if test_method and test_method in train_methods:
@@ -1923,16 +2033,91 @@ def show_training_interface():
         help="FDR levels to optimize for in results (select more for broader analysis)"
     )
     
+    # Model Type Selection
+    st.sidebar.markdown("### 🤖 Model Type")
+    model_type = st.sidebar.selectbox(
+        "Choose Model Type",
+        options=["K-Sweep XGBoost", "Legacy Ensemble"],
+        index=0,
+        help="K-Sweep XGBoost: Proven winning configuration from systematic comparison\nLegacy Ensemble: Previous XGBoost+RandomForest+LogisticRegression model"
+    )
+    
+    # Show model info
+    if model_type == "K-Sweep XGBoost":
+        st.sidebar.success("🏆 Using K-sweep winning XGBoost configuration")
+        st.sidebar.markdown("*Proven superior performance in systematic tests*")
+    else:
+        st.sidebar.info("🔄 Using legacy ensemble model for comparison")
+        st.sidebar.markdown("*XGBoost + Random Forest + Logistic Regression*")
+    
     # Advanced parameters
-    with st.sidebar.expander("🔧 Advanced Parameters"):
-        learning_rate = st.slider("Learning Rate", 0.01, 0.3, 0.08, 0.01,
-                                 help="Controls how much to change the model in response to errors. Lower values = more conservative learning, higher values = faster learning but risk overfitting")
-        max_depth = st.slider("Max Depth", 3, 10, 7, 1,
-                            help="Maximum depth of each decision tree. Deeper trees can model more complex patterns but may overfit to training data")
-        n_estimators = st.slider("N Estimators", 100, 2000, 1000, 100,
-                                help="Number of boosting rounds (trees) to build. More estimators generally improve performance but increase training time")
-        subsample = st.slider("Subsample", 0.5, 1.0, 0.8, 0.1,
-                            help="Fraction of training samples used for each tree. Lower values help prevent overfitting by introducing randomness")
+    with st.sidebar.expander("🔧 Model Parameters"):
+        # Set defaults based on model type
+        if model_type == "K-Sweep XGBoost":
+            # K-sweep winning parameters
+            lr_default, md_default, ne_default, ss_default = 0.1, 8, 600, 0.8
+            help_suffix = " (K-sweep winner)"
+        else:
+            # Legacy ensemble parameters  
+            lr_default, md_default, ne_default, ss_default = 0.08, 7, 1000, 0.8
+            help_suffix = " (Legacy ensemble)"
+            
+        learning_rate = st.slider("Learning Rate", 0.01, 0.3, lr_default, 0.01,
+                                 help=f"Controls how much to change the model in response to errors{help_suffix}")
+        max_depth = st.slider("Max Depth", 3, 15, md_default, 1,
+                            help=f"Maximum depth of each decision tree{help_suffix}")
+        n_estimators = st.slider("N Estimators", 100, 2000, ne_default, 50,
+                                help=f"Number of boosting rounds (trees) to build{help_suffix}")
+        subsample = st.slider("Subsample", 0.5, 1.0, ss_default, 0.05,
+                            help=f"Fraction of training samples used for each tree{help_suffix}")
+        
+        # Additional K-sweep parameters (only for K-Sweep XGBoost)
+        if model_type == "K-Sweep XGBoost":
+            st.markdown("#### **Feature Sampling**")
+            colsample_bytree = st.slider("Colsample by Tree", 0.3, 1.0, 0.6, 0.05,
+                                       help="K-sweep winner: 0.6. Fraction of features to use for each tree.")
+            min_child_weight = st.slider("Min Child Weight", 1, 10, 3, 1,
+                                       help="K-sweep winner: 3. Minimum sum of instance weight needed in a child.")
+            
+            st.markdown("#### **Regularization**")
+            gamma = st.slider("Gamma", 0.0, 5.0, 0.0, 0.1,
+                            help="K-sweep winner: 0.0. Minimum loss reduction required to make a further partition.")
+            reg_alpha = st.slider("L1 Regularization (Alpha)", 0.0, 2.0, 0.0, 0.01,
+                                 help="K-sweep winner: 0.0. L1 regularization term on weights.")
+            reg_lambda = st.slider("L2 Regularization (Lambda)", 0.5, 10.0, 1.5, 0.1,
+                                  help="K-sweep winner: 1.5. L2 regularization term on weights.")
+            
+            st.markdown("#### **Other Parameters**")
+            random_state = st.number_input("Random State", value=9649, min_value=0, max_value=99999, step=1,
+                                         help="K-sweep winner: 9649. Random seed for reproducible results")
+        else:
+            # Set default legacy values for ensemble
+            colsample_bytree = 0.8
+            min_child_weight = 1
+            gamma = 0.0
+            reg_alpha = 0.0
+            reg_lambda = 1.5
+            random_state = 42
+
+        st.markdown("#### **Calibration**")
+        calibration_display = st.selectbox(
+            "Calibration Method",
+            options=["Isotonic (default)", "Sigmoid (Platt)"],
+            index=0,
+            help="Choose probability calibration: Isotonic (non-parametric, monotonic) or Sigmoid (Platt scaling)."
+        )
+        calibration_method = 'isotonic' if calibration_display.startswith('Isotonic') else 'sigmoid'
+
+        st.markdown("#### **Peptide Aggregation**")
+        agg_display = st.selectbox(
+            "Aggregation Method",
+            options=["Max (best row)", "Mean across rows", "Weighted by Peak.Height"],
+            index=0,
+            help="How to combine multiple rows per peptide into one score before thresholding."
+        )
+        aggregation_method = (
+            'max' if agg_display.startswith('Max') else ('mean' if agg_display.startswith('Mean') else 'weighted')
+        )
     
     # Feature selection
     with st.sidebar.expander("🎯 Feature Selection"):
@@ -2359,7 +2544,8 @@ def show_training_interface():
         try:
             # Run analysis with suppressed verbose terminal output (UI progress unchanged)
             with suppress_verbose_output():
-                results = run_peptide_validation(
+                # Robust call with graceful fallback for older backends
+                params = dict(
                     train_methods=train_methods,
                     test_method=test_method,
                     train_fdr_levels=train_fdrs,
@@ -2367,6 +2553,9 @@ def show_training_interface():
                     target_fdr_levels=target_fdrs,
                     xgb_params=xgb_params,
                     progress_callback=progress_callback,
+                    aggregation_method=aggregation_method,
+                    calibration_method=calibration_method,
+                    model_type=model_type,
                     feature_selection={
                         'use_diann_quality': use_diann_quality,
                         'use_sequence_features': use_sequence_features,
@@ -2376,6 +2565,19 @@ def show_training_interface():
                         'excluded_features': excluded_feature_list
                     }
                 )
+                for _ in range(2):  # at most drop two keys
+                    try:
+                        results = run_peptide_validation(**params)
+                        break
+                    except TypeError as e:
+                        msg = str(e)
+                        if 'calibration_method' in msg and 'calibration_method' in params:
+                            params.pop('calibration_method', None)
+                            continue
+                        if 'aggregation_method' in msg and 'aggregation_method' in params:
+                            params.pop('aggregation_method', None)
+                            continue
+                        raise
             
             end_time = time.time()
             runtime_minutes = (end_time - start_time) / 60
@@ -2398,6 +2600,8 @@ def show_training_interface():
                 'test_fdr': test_fdr,
                 'target_fdr_levels': target_fdrs,
                 'xgb_params': xgb_params,
+                'calibration_method': calibration_method,
+                'aggregation_method': aggregation_method,
                 'feature_selection': {
                     'use_diann_quality': use_diann_quality,
                     'use_sequence_features': use_sequence_features,
@@ -2413,7 +2617,7 @@ def show_training_interface():
             st.session_state.analysis_running = False
             st.session_state.analysis_complete = True
             
-            st.success(f"🎉 Analysis completed successfully in {runtime_minutes:.1f} minutes!")
+            st.success(f"Analysis completed successfully in {runtime_minutes:.1f} minutes!")
             time.sleep(1)
             st.rerun()
             
@@ -2812,6 +3016,51 @@ def display_feature_importance_tab(results_dir: str):
     feature_df = None
     feature_df_loaded = False
 
+    # SHAP Feature Importance Analysis assets
+    shap_data_path = os.path.join(feature_analysis_dir, "shap_data.json")
+    shap_beeswarm_path = os.path.join(feature_analysis_dir, "shap_summary_beeswarm.png")
+    shap_bar_path = os.path.join(feature_analysis_dir, "shap_importance_bar.png")
+
+    def render_shap_section():
+        if os.path.exists(shap_data_path):
+            st.markdown("#### 🐝 SHAP Feature Importance Analysis")
+
+            with st.container():
+                st.markdown("**Feature Importance (SHAP Impact Analysis)**")
+                st.markdown(
+                    "*Bars pointing **right (→)** mean high feature values increase the likelihood a peptide is real.*"
+                )
+                st.markdown(
+                    "*Bars pointing **left (←)** mean high feature values decrease the likelihood a peptide is real.*"
+                )
+
+                current_scheme = st.session_state.get('selected_color_scheme', 'Default')
+                shap_fig = create_interactive_shap_plots(shap_data_path, current_scheme)
+
+                if shap_fig is not None:
+                    st.plotly_chart(shap_fig, use_container_width=True, config={'displayModeBar': False})
+                else:
+                    st.info("SHAP data could not be visualized for this run.")
+
+        elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
+            st.markdown("####  SHAP Feature Importance Analysis (Static)")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if os.path.exists(shap_beeswarm_path):
+                    st.markdown("**SHAP Beeswarm Summary Plot**")
+                    st.image(shap_beeswarm_path, use_container_width=True)
+                else:
+                    st.info("SHAP beeswarm plot not available")
+
+            with col2:
+                if os.path.exists(shap_bar_path):
+                    st.markdown("**SHAP Feature Importance**")
+                    st.image(shap_bar_path, use_container_width=True)
+                else:
+                    st.info("SHAP bar plot not available")
+
     if not csv_available:
         st.info("🔍 Feature importance data is not available for this run.")
         st.markdown("**Note**: Feature importance analysis is generated during model training and may not be available for all analysis types.")
@@ -2833,49 +3082,7 @@ def display_feature_importance_tab(results_dir: str):
         except Exception as e:
             st.error(f"❌ Error displaying feature importance analysis: {str(e)}")
 
-    # SHAP Feature Importance Analysis assets
-    shap_data_path = os.path.join(feature_analysis_dir, "shap_data.json")
-    shap_beeswarm_path = os.path.join(feature_analysis_dir, "shap_summary_beeswarm.png")
-    shap_bar_path = os.path.join(feature_analysis_dir, "shap_importance_bar.png")
-
-    if os.path.exists(shap_data_path):
-        st.markdown("#### 🐝 SHAP Feature Importance Analysis")
-
-        with st.container():
-            st.markdown("**Feature Importance (SHAP Impact Analysis)**")
-            st.markdown(
-                "*Bars pointing **right (→)** mean high feature values increase the likelihood a peptide is real.*"
-            )
-            st.markdown(
-                "*Bars pointing **left (←)** mean high feature values decrease the likelihood a peptide is real.*"
-            )
-
-            current_scheme = st.session_state.get('selected_color_scheme', 'Default')
-            shap_fig = create_interactive_shap_plots(shap_data_path, current_scheme)
-
-            if shap_fig is not None:
-                st.plotly_chart(shap_fig, use_container_width=True, config={'displayModeBar': False})
-            else:
-                st.info("SHAP data could not be visualized for this run.")
-
-    elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
-        st.markdown("####  SHAP Feature Importance Analysis (Static)")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if os.path.exists(shap_beeswarm_path):
-                st.markdown("**SHAP Beeswarm Summary Plot**")
-                st.image(shap_beeswarm_path, use_container_width=True)
-            else:
-                st.info("SHAP beeswarm plot not available")
-
-        with col2:
-            if os.path.exists(shap_bar_path):
-                st.markdown("**SHAP Feature Importance**")
-                st.image(shap_bar_path, use_container_width=True)
-            else:
-                st.info("SHAP bar plot not available")
+    shap_section_rendered = False
 
     if feature_df_loaded:
         try:
@@ -2922,6 +3129,9 @@ def display_feature_importance_tab(results_dir: str):
             - **XGBoost Importance** (above): Measures the improvement in accuracy brought by a feature to the branches it is on
             - **SHAP Values** (below): Measures the average contribution of each feature to individual predictions
             """)
+
+            render_shap_section()
+            shap_section_rendered = True
 
             # 3. Feature Categories Analysis (if we can detect patterns)
             st.markdown("#### 🔍 Feature Category Analysis")
@@ -3121,6 +3331,9 @@ def display_feature_importance_tab(results_dir: str):
         except Exception as e:
             st.error(f"❌ Error loading feature importance data: {str(e)}")
 
+    if not shap_section_rendered:
+        render_shap_section()
+
 
 def display_results():
     """Display analysis results with interactive visualizations."""
@@ -3135,17 +3348,7 @@ def display_results():
         st.error("❌ No valid results to display")
         return
     
-    # Key performance metrics
-    st.markdown("### 🏆 Best Performance Achieved")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Achieved FDR", f"{summary['best_fdr']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
-    with col2:
-        st.metric("Additional Unique Peptides", summary['best_peptides'], delta=None, help="Total additional peptides identified (includes both true and false positives)")
-    with col3:
-        st.metric("Method Tested", summary['best_method'], delta=None, help="MS method used for holdout testing")
-    with col4:
-        st.metric("Analysis Time", summary['total_runtime'], delta=None, help="Total computation time")
+    # Removed "Best Performance Achieved" metrics section per request
     
     # Enhanced data source clarity section
     st.markdown("### 📊 Data Sources & Recovery Analysis")
@@ -3253,58 +3456,7 @@ def display_results():
     st.markdown("---")
     display_main_color_scheme_selector()
     st.markdown("---")
-    
-    # Recovery metrics with clear context
-    st.markdown("### 🎯 Recovery Performance")
-    col_a, col_b, col_c, col_d, col_e = st.columns(5)
-    
-    with col_a:
-        baseline_count = summary.get('baseline_peptides', 0)
-        if baseline_count > 0:
-            st.metric("Baseline Identified", f"{baseline_count:,}", help=f"High-confidence peptides from {summary.get('best_method', 'test method')} 1% FDR")
-        else:
-            st.metric("Baseline Identified", "N/A", help="Baseline peptide count not available")
-    
-    with col_b:
-        additional_found = int(summary['best_peptides']) if isinstance(summary['best_peptides'], str) else summary['best_peptides']
-        baseline_count = summary.get('baseline_peptides', 0)
-        recovery_rate = (additional_found / baseline_count) * 100 if baseline_count > 0 else 0
-        st.metric("Additional Validated", f"{additional_found:,}", delta=f"+{recovery_rate:.1f}%", help="Peptides validated by ground truth")
-    
-    with col_c:
-        baseline_count = summary.get('baseline_peptides', 0)
-        total_identified = baseline_count + additional_found
-        st.metric("Total Identified", f"{total_identified:,}", help="Baseline + Additional peptides combined")
-    
-    with col_d:
-        # Show validated candidates (the pool of recoverable peptides)
-        if 'results' in results and results['results']:
-            valid_results = [r for r in results['results'] if 'Additional_Peptides' in r and 'Actual_FDR' in r and r['Actual_FDR'] != 'N/A']
-            if valid_results:
-                best_result = max(valid_results, key=lambda x: int(x['Additional_Peptides']))
-                validated_candidates = int(best_result.get('Total_Validated_Candidates', 0))
-                st.metric("Validated Candidates", f"{validated_candidates:,}", help="Total additional peptides in test set that are present in ground truth")
-            else:
-                st.metric("Validated Candidates", "N/A", help="No valid results available")
-        else:
-            st.metric("Validated Candidates", "N/A", help="No results data available")
-    
-    with col_e:
-        # Calculate recovery rate based on validated candidates, not all missed peptides
-        if 'results' in results and results['results']:
-            valid_results = [r for r in results['results'] if 'Additional_Peptides' in r and 'Actual_FDR' in r and r['Actual_FDR'] != 'N/A']
-            if valid_results:
-                best_result = max(valid_results, key=lambda x: int(x['Additional_Peptides']))
-                true_positives = int(best_result['Additional_Peptides'])
-                validated_candidates = int(best_result.get('Total_Validated_Candidates', 0))
-                recovery_rate = (true_positives / validated_candidates) * 100 if validated_candidates > 0 else 0
-                st.metric("Recovery Rate", f"{recovery_rate:.1f}%", help=f"Percentage of validated candidates successfully recovered")
-            else:
-                st.metric("Recovery Rate", "N/A", help="No valid results available")
-        else:
-            st.metric("Recovery Rate", "N/A", help="No results data available")
-    
-    
+    # Removed "Recovery Performance" metrics section per request
     # Convert results to DataFrame
     if 'results' in results and results['results']:
         results_df = pd.DataFrame(results['results'])
@@ -3501,7 +3653,7 @@ def display_detailed_plots(df):
         
         # Recovery percentage plot with enhanced context
         fig = px.line(df, x='Target_FDR', y='Recovery_Pct',
-                     title='Recovery Rate: What % of Validated Candidates Were Successfully Identified',
+                     title='Recovery Rate',
                      color_discrete_sequence=[CHART_COLORS['line_primary']])
         
         fig.update_traces(mode='lines+markers', line=dict(width=3), marker=dict(size=8))
@@ -3536,7 +3688,7 @@ def display_data_tables(df):
     **📊 Column Explanations (left to right):**
     • **Target FDR**: Desired false discovery rate threshold
     • **Threshold**: Model confidence threshold used for predictions
-    • **Additional Unique Peptides**: Total additional peptides identified (includes both true and false positives) 
+    • **Validated Additional Peptides (TP)**: Additional peptides validated by ground truth (true positives only)
     • **Actual FDR**: Measured false discovery rate of additional peptides
     • **Recovery %**: Percentage of validated candidates successfully recovered
     • **Increase %**: Improvement over baseline peptide count
@@ -3568,7 +3720,7 @@ def display_data_tables(df):
         column_config={
             "Target_FDR": st.column_config.TextColumn("Target FDR", help="Desired false discovery rate"),
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
-            "Additional_Peptides": st.column_config.NumberColumn("Additional Unique Peptides", help="Total additional peptides identified (includes both true and false positives)"),
+            "Additional_Peptides": st.column_config.NumberColumn("Validated Additional Peptides (TP)", help="Validated additional peptides (true positives only)"),
             "False_Positives": st.column_config.NumberColumn("False Positives", help="Model predictions not in ground truth"),
             "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
             "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient (-1 to +1, higher is better)"),
@@ -3623,11 +3775,8 @@ def display_export_options(results, include_general_exports: bool = True):
     if is_inference_mode:
         st.markdown("### 🧪 DIA-NN Filtered Export")
         try:
-            brand_diann = st.checkbox(
-                "✨ Brand CSV header (PeptiDIA v0.7, timestamp, config)",
-                value=True,
-                help="Adds a commented header block above the CSV data."
-            )
+            # Always export a clean CSV that matches the Excel 'Filtered Results' sheet
+            brand_diann = False
             export_format = st.radio(
                 "Format",
                 ["CSV (.csv)", "Excel (.xlsx)"],
@@ -3716,8 +3865,14 @@ def display_export_options(results, include_general_exports: bool = True):
                             fdr_df = fdr_df[cols].rename(columns=rename_map)
                             # Sort by Target FDR if present
                             if 'Target FDR (%)' in fdr_df.columns:
-                                with _pd.option_context('mode.use_inf_as_na', True):
-                                    fdr_df['Target FDR (%)'] = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                # Avoid deprecated use_inf_as_na: explicitly replace inf with NaN
+                                col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                try:
+                                    import numpy as _np
+                                    col = col.replace([_np.inf, -_np.inf], _np.nan)
+                                except Exception:
+                                    pass
+                                fdr_df['Target FDR (%)'] = col
                                 fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
 
                         # Choose an available Excel engine (prefer xlsxwriter for formatting & images)
@@ -3742,44 +3897,125 @@ def display_export_options(results, include_general_exports: bool = True):
                             # Sheet 2: metadata + FDR results stacked with spacing
                             sheet_name = "Export Summary"
                             # Leave space for title/logo
-                            start_row = 5
+                            start_row = 5  # header at row 6 in Excel (0-based index)
                             if not meta_df.empty:
                                 meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
                                 start_row = start_row + len(meta_df) + 3
                             if not fdr_df.empty:
                                 fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
 
+                            # Resolve logo path (prefer explicit user path, then repo assets)
+                            logo_path = None
+                            try:
+                                candidate_paths = [
+                                    '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
+                                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
+                                ]
+                                for _p in candidate_paths:
+                                    if os.path.exists(_p):
+                                        logo_path = _p
+                                        break
+                            except Exception:
+                                logo_path = None
+
                             # Optional styling and logo when using xlsxwriter
                             if engine == 'xlsxwriter':
                                 wb = writer.book
                                 ws_results = writer.sheets.get('Filtered Results')
                                 ws_summary = writer.sheets.get(sheet_name)
-                                # Formats
-                                header_fmt = wb.add_format({'bold': True, 'bg_color': '#E6F2FA', 'border': 1})
+                                # Formats (keep colors consistent & minimal)
+                                header_fmt = wb.add_format({
+                                    'bold': True,
+                                    'bg_color': '#E6F2FA',
+                                    'border': 1,
+                                    'align': 'center',
+                                    'valign': 'vcenter',
+                                    'pattern': 1  # ensure background color is applied
+                                })
+                                # Keep a title format in case we reintroduce a title later
                                 title_fmt = wb.add_format({'bold': True, 'font_size': 16})
                                 key_fmt = wb.add_format({'bold': True})
-                                # Title and logo
-                                ws_summary.write('A1', 'PeptiDIA Export Summary', title_fmt)
+                                # Place logo in top-left (A1..A5 area), no title text
                                 try:
-                                    logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png')
-                                    if os.path.exists(logo_path):
-                                        ws_summary.insert_image('D1', logo_path, {'x_scale': 0.4, 'y_scale': 0.4})
+                                    if logo_path and os.path.exists(logo_path):
+                                        ws_summary.insert_image('A1', logo_path, {
+                                            'x_scale': 0.11,
+                                            'y_scale': 0.11,
+                                            'x_offset': 0,
+                                            'y_offset': 0,
+                                            'object_position': 2  # move but don't size with cells
+                                        })
                                 except Exception:
                                     pass
-                                # Apply header formatting (meta table)
+                                # Apply header formatting precisely to used cells only (avoid coloring whole rows)
+                                # Meta table headers at row 5 (0-based)
                                 if not meta_df.empty:
-                                    ws_summary.set_row(5, None, header_fmt)
-                                    # Set key column bold
-                                    ws_summary.set_column('A:A', 24, key_fmt)
-                                    ws_summary.set_column('B:B', 60)
-                                # Apply header formatting (FDR table)
+                                    ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
+                                    ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
+                                    # Column widths
+                                    ws_summary.set_column(0, 0, 28, key_fmt)
+                                    # Wrap text in Value column so it won't overflow under the logo
+                                    wrap_fmt = wb.add_format({'text_wrap': True})
+                                    ws_summary.set_column(1, 1, 70, wrap_fmt)
+                                    # Block overflow from column B into C/D by placing spaces in C/D
+                                    # Data rows begin at Excel row 7 (0-based index 6)
+                                    for r in range(6, 6 + len(meta_df)):
+                                        ws_summary.write(r, 2, ' ')
+                                        ws_summary.write(r, 3, ' ')
+                                # FDR table headers start at 'start_row'
                                 if not fdr_df.empty:
-                                    ws_summary.set_row(start_row, None, header_fmt)
-                                    ws_summary.set_column('A:K', 18)
+                                    for c_idx, c_name in enumerate(list(fdr_df.columns)):
+                                        ws_summary.write(start_row, c_idx, str(c_name), header_fmt)
+                                    # Set appropriate widths for each column based on content
+                                    for c_idx, c_name in enumerate(list(fdr_df.columns)):
+                                        if 'Validated Candidates' in str(c_name):
+                                            ws_summary.set_column(c_idx, c_idx, 22)
+                                        elif 'Additional Peptides' in str(c_name):
+                                            ws_summary.set_column(c_idx, c_idx, 20)
+                                        elif 'False Positives' in str(c_name):
+                                            ws_summary.set_column(c_idx, c_idx, 18)
+                                        elif 'Target FDR' in str(c_name) or 'Actual FDR' in str(c_name):
+                                            ws_summary.set_column(c_idx, c_idx, 16)
+                                        else:
+                                            ws_summary.set_column(c_idx, c_idx, 14)
                                 # Results sheet headers & widths
-                                if ws_results:
-                                    ws_results.set_row(0, None, header_fmt)
-                                    ws_results.set_column('A:Z', 14)
+                                if ws_results and not filtered_df.empty:
+                                    # Rewrite header cells with format to guarantee styling
+                                    for c_idx, c_name in enumerate(list(filtered_df.columns)):
+                                        ws_results.write(0, c_idx, str(c_name), header_fmt)
+                                    ws_results.set_column(0, max(0, len(filtered_df.columns) - 1), 14)
+                            elif engine == 'openpyxl':
+                                # Insert logo using openpyxl if available
+                                try:
+                                    from openpyxl.drawing.image import Image as XLImage
+                                    from openpyxl.styles import Alignment
+                                    ws_summary = writer.sheets.get(sheet_name)
+                                    if ws_summary and logo_path and os.path.exists(logo_path):
+                                        img = XLImage(logo_path)
+                                        # Scale image down roughly similar to xlsxwriter scale
+                                        try:
+                                            img.width = int(img.width * 0.11)
+                                            img.height = int(img.height * 0.11)
+                                        except Exception:
+                                            pass
+                                        # Anchor logo at A1..A5 area
+                                        ws_summary.add_image(img, 'A1')
+
+                                    # Match key/value column widths and wrap long values
+                                    try:
+                                        ws_summary.column_dimensions['A'].width = 28
+                                        ws_summary.column_dimensions['B'].width = 70
+                                        # Header in row 6, data from row 7 to row (7 + len(meta_df) - 1)
+                                        for r in range(7, 7 + len(meta_df)):
+                                            cell = ws_summary[f'B{r}']
+                                            cell.alignment = Alignment(wrap_text=True)
+                                            # Block overflow into C/D by writing spaces
+                                            ws_summary[f'C{r}'] = ' '
+                                            ws_summary[f'D{r}'] = ' '
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
 
                         st.download_button(
                             label=f"⬇️ Save Combined Export (.xlsx)",
@@ -3790,21 +4026,8 @@ def display_export_options(results, include_general_exports: bool = True):
                     except Exception:
                         st.info("Excel engine not available. Please install openpyxl or xlsxwriter to enable Excel export.")
                 else:
-                    # CSV export, optionally brand with header block
-                    csv_body = filtered_df.to_csv(index=False)
-                    if brand_diann:
-                        cfg = results.get('config', {})
-                        header_lines = [
-                            f"# PeptiDIA v0.7",
-                            f"# Exported: {datetime.now().isoformat()}",
-                            f"# Test Method: {cfg.get('test_method')}",
-                            f"# Test FDR: {cfg.get('test_fdr')}",
-                            f"# Target FDR: {tfdr:.1f}",
-                            f"# Train Methods: {', '.join(cfg.get('train_methods', []))}",
-                        ]
-                        csv_data = "\n".join(header_lines) + "\n" + csv_body
-                    else:
-                        csv_data = csv_body
+                    # CSV export identical to 'Filtered Results' sheet (no extra text)
+                    csv_data = filtered_df.to_csv(index=False)
                     st.download_button(
                         label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
                         data=csv_data,
@@ -3927,26 +4150,26 @@ def show_inference_interface():
                     
                     # Detect discovery mode
                     is_discovery_mode = results_df['Actual_FDR'].max() == 0 and results_df['Additional_Peptides'].max() > 0
+
+                    # Determine test method once so it's always available
+                    actual_test_method = "Test Method"
+                    if hasattr(st.session_state, 'inference_test_method'):
+                        actual_test_method = st.session_state.inference_test_method
+                    elif hasattr(st.session_state, 'selected_test_method'):
+                        actual_test_method = st.session_state.selected_test_method
                     
-                    # Key performance metrics - adapted for discovery mode
+                    # Key performance metrics - show only for discovery mode; hide for standard inference
                     if is_discovery_mode:
                         st.markdown("### 🔬 Discovery Results Summary")
-                    else:
-                        st.markdown("### 🏆 Best Performance Achieved")
-                        
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        if is_discovery_mode:
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
                             # Try to get baseline peptides from inference results
                             baseline_peptides = 0
                             if hasattr(st.session_state, 'inference_results'):
                                 baseline_peptides = st.session_state.inference_results.get('summary', {}).get('baseline_peptides', 
                                                   st.session_state.inference_results.get('baseline_peptides', 0))
                             st.metric("Baseline Peptides", f"{baseline_peptides:,}" if baseline_peptides > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
-                        else:
-                            st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
-                    with col2:
-                        if is_discovery_mode:
+                        with col2:
                             # Show discovered peptides at 5% FDR as an example
                             fdr_5_result = None
                             for result in results_df.itertuples():
@@ -3959,21 +4182,10 @@ def show_inference_interface():
                                 st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
                             else:
                                 st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
-                        else:
-                            st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
-                    with col3:
-                        # Try to get the actual test method name from session state or inference results
-                        actual_test_method = "Test Method"  # Default fallback
-                        if hasattr(st.session_state, 'inference_test_method'):
-                            actual_test_method = st.session_state.inference_test_method
-                        elif hasattr(st.session_state, 'selected_test_method'):
-                            actual_test_method = st.session_state.selected_test_method
-                        st.metric("Method Tested", actual_test_method, delta=None, help="MS method used for inference testing")
-                    with col4:
-                        if is_discovery_mode:
+                        with col3:
+                            st.metric("Method Tested", actual_test_method, delta=None, help="MS method used for inference testing")
+                        with col4:
                             st.metric("Analysis Type", "Discovery", delta=None, help="Discovery mode - no ground truth validation")
-                        else:
-                            st.metric("Analysis Type", "Inference", delta=None, help="Model inference analysis")
                     
                     # Check if we have ground truth data available for this test set
                     has_ground_truth = False
@@ -4165,40 +4377,38 @@ def show_inference_interface():
         **Original Test:** {config['test_method']}
         """)
     
-    # Cache available methods to avoid expensive discovery calls
-    @st.cache_data(ttl=300)  # Cache for 5 minutes
-    def get_available_methods_cached(dataset_filter):
-        return get_configured_methods(dataset_filter)
-    
-    # Get ALL available methods for inference (including grouped ones)
+    # Get only grouped methods for inference
     @st.cache_data(ttl=300)
-    def get_all_available_methods_cached(dataset_filter):
-        # 1) Configured grouped methods (e.g., ASTRAL_Group_002)
-        configured = set(get_configured_methods(dataset_filter))
+    def get_grouped_methods_cached(dataset_filter):
+        # Only show configured grouped methods (e.g., ASTRAL_Group_002)
+        configured = get_configured_methods(dataset_filter)
+        return sorted(configured)
 
-        # 2) Raw per-file methods (discovery mode) via dataset utilities
-        raw_methods = set(get_all_available_methods(dataset_filter, include_discovery_mode=True))
-
-        # Union so inference shows both grouped and individual methods
-        union = sorted(configured.union(raw_methods))
-        return union
-    
-    # Get available methods (including those without ground truth for discovery mode)
-    available_methods_filtered = get_all_available_methods_cached(dataset_filter)
+    # Get available grouped methods only
+    available_methods_filtered = get_grouped_methods_cached(dataset_filter)
     
     # Data selection (clean layout)
     test_method = st.sidebar.selectbox(
         "🧪 Select test method:",
         available_methods_filtered,
-        help="Choose the method to apply the model to (works with or without ground truth)"
+        help="Choose the grouped method to apply the model to"
     )
-    
-    # Display the full selected method name
-    if test_method:
-        st.sidebar.markdown(f"**Selected:** `{test_method}`")
-        if "_Group_" not in test_method:
-            st.sidebar.caption("Tip: Grouped methods (e.g., ASTRAL_Group_002) also appear here. If you pick an individual file, PeptiDIA will automatically map it to the correct group for ground-truth metrics when available.")
-    
+
+    # Check if selected test method was used in training
+    if test_method and test_method in config.get('train_methods', []):
+        st.sidebar.markdown(f"""
+            <div style="
+                background-color: #fff3cd;
+                border-left: 4px solid #ffc107;
+                padding: 12px;
+                border-radius: 4px;
+                margin-top: 10px;
+                font-size: 0.9rem;
+            ">
+                <strong>⚠️ Note:</strong> <code>{test_method}</code> was used for training this model.
+            </div>
+        """, unsafe_allow_html=True)
+
     test_fdr = st.sidebar.selectbox(
         "📈 Select test FDR level:",
         [1, 20, 50],
@@ -4293,20 +4503,37 @@ def show_inference_interface():
     # Current selection summary
     st.markdown("#### 📋 Current Selection")
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
-        st.metric("Selected Model", f"{selected_model['run_id']}", f"{selected_model['best_fdr']:.1f}% Best FDR")
-    
+        model_id = selected_model['run_id']
+        st.markdown(f"""
+            <div title="{model_id}" style="cursor: help;">
+                <div style="font-size: 0.875rem; color: rgba(49, 51, 63, 0.6);">Selected Model</div>
+                <div style="font-size: 2.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{model_id}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
     with col2:
-        st.metric("Test Method", test_method, f"{test_fdr}% FDR")
-    
+        st.markdown(f"""
+            <div title="{test_method}" style="cursor: help;">
+                <div style="font-size: 0.875rem; color: rgba(49, 51, 63, 0.6);">Test Method</div>
+                <div style="font-size: 2.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{test_method}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
     with col3:
         if target_fdr_levels:
-            st.metric("Target FDR Levels", f"{len(target_fdr_levels)} levels", f"{min(target_fdr_levels):.1f}% - {max(target_fdr_levels):.1f}%")
+            levels_text = f"{len(target_fdr_levels)} levels"
+            levels_detail = ", ".join(map(str, target_fdr_levels))
         else:
-            st.metric("Target FDR Levels", "0 levels", "None selected")
-    
-    st.markdown("---")
+            levels_text = "0 levels"
+            levels_detail = "No levels selected"
+        st.markdown(f"""
+            <div title="{levels_detail}" style="cursor: help;">
+                <div style="font-size: 0.875rem; color: rgba(49, 51, 63, 0.6);">Target FDR Levels</div>
+                <div style="font-size: 2.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{levels_text}</div>
+            </div>
+        """, unsafe_allow_html=True)
 
 def load_trained_models_from_history():
     """Load trained models from run history and discover CLI models."""
@@ -4601,9 +4828,15 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                 status_text.text("Optimizing thresholds...")
             progress_bar.progress(80)
             
+            # Determine aggregation method (use model config if available, else default to 'max')
+            aggregation_method = (
+                selected_model.get('config', {}).get('aggregation_method', 'max')
+                if isinstance(selected_model, dict) else 'max'
+            )
+
             # Apply same peptide-level aggregation as training mode ONCE for all targets
             peptide_data, peptide_predictions, peptide_labels = api._aggregate_predictions_by_peptide(
-                test_data, y_scores, y_test, aggregation_method='max'
+                test_data, y_scores, y_test, aggregation_method=aggregation_method
             )
             
             # Check if we're in discovery mode (no ground truth available)
@@ -4616,6 +4849,8 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             selected_sequences_by_fdr = {}
             # Determine peptide sequence column in aggregated table
             seq_col_agg = 'Modified.Sequence' if 'Modified.Sequence' in peptide_data.columns else 'Stripped.Sequence'
+            last_threshold = None
+            last_tp = 0
             for target_fdr in target_fdr_levels:
                 
                 if use_original_thresholds and target_fdr in original_thresholds:
@@ -4627,9 +4862,10 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                         # In discovery mode, use pre-trained thresholds or reasonable defaults
                         threshold = original_thresholds.get(target_fdr, 0.5)
                     else:
-                        # Use threshold optimization with aggregated data
+                        # Use threshold optimization with aggregated data and monotonic expansion
                         threshold, tp, actual_fdr = api._find_optimal_threshold(
-                            peptide_labels, peptide_predictions, target_fdr
+                            peptide_labels, peptide_predictions, target_fdr,
+                            previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
                         )
                 
                 # Calculate metrics
@@ -4660,6 +4896,11 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     fp = 0
                     actual_fdr = 0
                     discovered_peptides = 0
+
+                # Update monotonic trackers for next target
+                if threshold is not None and not is_discovery_mode:
+                    last_threshold = threshold if last_threshold is None else min(last_threshold, threshold)
+                    last_tp = max(last_tp, int(tp))
                 
                 # Calculate recovery percentage and increase percentage
                 if is_discovery_mode:
@@ -4673,6 +4914,18 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     recovery_pct = (tp / total_validated * 100) if total_validated > 0 else 0
                     increase_pct = (tp / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
                 
+                # Calculate MCC
+                if is_discovery_mode:
+                    mcc = 0  # Can't calculate MCC without ground truth
+                else:
+                    # Calculate MCC from confusion matrix
+                    tn = np.sum((y_pred == 0) & (peptide_labels == 0))
+                    fn = np.sum((y_pred == 0) & (peptide_labels == 1))
+                    # MCC = (TP*TN - FP*FN) / sqrt((TP+FP)(TP+FN)(TN+FP)(TN+FN))
+                    numerator = (tp * tn) - (fp * fn)
+                    denominator = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+                    mcc = numerator / denominator if denominator > 0 else 0
+
                 results.append({
                     'Target_FDR': target_fdr,
                     'Threshold': threshold if threshold is not None else 0.5,
@@ -4682,7 +4935,8 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'Precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
                     'Recovery_Pct': recovery_pct,
                     'Increase_Pct': increase_pct,
-                    'Total_Validated_Candidates': total_validated
+                    'Total_Validated_Candidates': total_validated,
+                    'MCC': mcc
                 })
             
             status_text.text("Preparing results...")
@@ -4698,7 +4952,8 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'test_fdr': test_fdr,
                     'target_fdr_levels': target_fdr_levels,
                     'xgb_params': original_config['xgb_params'],
-                    'feature_selection': original_config['feature_selection']
+                    'feature_selection': original_config['feature_selection'],
+                    'aggregation_method': aggregation_method
                 },
                 'summary': {
                     'baseline_peptides': len(baseline_peptides),
@@ -5179,22 +5434,15 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
         # Detect discovery mode
         is_discovery_mode = results_df['Actual_FDR'].max() == 0 and results_df['Additional_Peptides'].max() > 0
         
-        # Key performance metrics - adapted for discovery mode
+        # Key performance metrics - show only for discovery mode; hide for standard inference
         if is_discovery_mode:
             st.markdown("### 🔬 Discovery Results Summary")
-        else:
-            st.markdown("### 🏆 Best Performance Achieved")
-            
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            if is_discovery_mode:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
                 # Get baseline peptides from summary section
                 baseline_count = formatted_results.get('summary', {}).get('baseline_peptides', formatted_results.get('baseline_peptides', 0))
                 st.metric("Baseline Peptides", f"{baseline_count:,}" if baseline_count > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
-            else:
-                st.metric("Achieved FDR", f"{best_result['Actual_FDR']:.1f}%", delta=None, help="Actual false discovery rate of additional peptides")
-        with col2:
-            if is_discovery_mode:
+            with col2:
                 # Show discovered peptides at 5% FDR as an example
                 fdr_5_result = None
                 for result in results_df.itertuples():
@@ -5207,15 +5455,10 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
                     st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
                 else:
                     st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
-            else:
-                st.metric("Additional Unique Peptides", int(best_result['Additional_Peptides']), delta=None, help="Total additional peptides identified (includes both true and false positives)")
-        with col3:
-            st.metric("Method Tested", test_method, delta=None, help="MS method used for inference testing")
-        with col4:
-            if is_discovery_mode:
+            with col3:
+                st.metric("Method Tested", test_method, delta=None, help="MS method used for inference testing")
+            with col4:
                 st.metric("Analysis Type", "Discovery", delta=None, help="Discovery mode - no ground truth validation")
-            else:
-                st.metric("Test FDR Level", f"{test_fdr}%", delta=None, help="FDR level of test data used")
         
         # Check if we have ground truth data available for this test set
         has_ground_truth = False
@@ -5397,20 +5640,20 @@ def display_inference_table_only(df):
         • **Additional Unique Peptides**: Total additional peptides identified (includes both true and false positives)
         • **False Positives**: Model predictions not validated by ground truth
         • **Actual FDR**: Measured false discovery rate of additional peptides
-        • **Precision**: Model precision (TP/(TP+FP))
         • **Recovery %**: Percentage of validated candidates successfully recovered
         • **Increase %**: Improvement over baseline peptide count
+        • **MCC**: Matthews Correlation Coefficient (-1 to +1, higher is better quality predictions)
         """)
     
     # Format the dataframe for display
     display_df = df.copy()
-    
-    # Remove internal columns from display 
-    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates']
-    
+
+    # Remove internal columns from display
+    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates', 'Precision']
+
     if is_discovery_mode:
         # In discovery mode, remove columns that don't make sense without ground truth
-        discovery_columns_to_remove = ['False_Positives', 'Actual_FDR', 'Precision', 'Recovery_Pct']
+        discovery_columns_to_remove = ['False_Positives', 'Actual_FDR', 'Recovery_Pct', 'MCC']
         columns_to_remove.extend(discovery_columns_to_remove)
         
         # Rename columns for discovery context
@@ -5452,8 +5695,15 @@ def display_inference_table_only(df):
             "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
             "Recovery_Pct": st.column_config.TextColumn("Recovery %", help="% of validated candidates recovered"),
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline"),
-            "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient (-1 to +1, higher is better)")
+            "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient - Quality metric (-1 to +1, higher is better)")
         }
+
+        # Reorder columns to ensure MCC is last
+        column_order = ["Target_FDR", "Threshold", "Additional_Peptides", "False_Positives",
+                       "Actual_FDR", "Recovery_Pct", "Increase_Pct", "MCC"]
+        # Only keep columns that exist in the dataframe
+        column_order = [col for col in column_order if col in display_df.columns]
+        display_df = display_df[column_order]
     
     st.dataframe(
         display_df,

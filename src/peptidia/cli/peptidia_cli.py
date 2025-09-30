@@ -1375,6 +1375,8 @@ class PeptiDIACLI:
                                 'dataset': config.get('dataset', 'Unknown')
                             }
                             models.append(model_info)
+                    except json.JSONDecodeError as e:
+                        print(f"{Colors.WARNING}⚠️  Skipping corrupted model {cli_dir.name} (incomplete metadata file){Colors.ENDC}")
                     except Exception as e:
                         print(f"{Colors.WARNING}⚠️  Could not load CLI model {cli_dir.name}: {e}{Colors.ENDC}")
         
@@ -1428,6 +1430,8 @@ class PeptiDIACLI:
                             'dataset': dataset
                         }
                         models.append(model_info)
+                except json.JSONDecodeError as e:
+                    print(f"{Colors.WARNING}⚠️  Skipping corrupted model {streamlit_dir.name} (incomplete metadata file){Colors.ENDC}")
                 except Exception as e:
                     print(f"{Colors.WARNING}⚠️  Could not load Streamlit model {streamlit_dir.name}: {e}{Colors.ENDC}")
         
@@ -1436,11 +1440,57 @@ class PeptiDIACLI:
         return models
     
     def _select_trained_model(self, available_models: List[Dict]) -> Optional[Dict]:
-        """Allow user to select from available trained models."""
-        print(f"\n{Colors.BOLD}📋 Available Trained Models:{Colors.ENDC}")
+        """Allow user to select from available trained models with date filtering."""
+
+        # Step 1: Group models by date
+        from collections import defaultdict
+        models_by_date = defaultdict(list)
+        for model in available_models:
+            # Extract date from timestamp (YYYYMMDD_HHMMSS)
+            date_str = model['timestamp'][:8]
+            try:
+                from datetime import datetime
+                date_obj = datetime.strptime(date_str, '%Y%m%d')
+                formatted_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                formatted_date = date_str
+            models_by_date[formatted_date].append(model)
+
+        # Sort dates (newest first)
+        sorted_dates = sorted(models_by_date.keys(), reverse=True)
+
+        # Step 2: Let user select a date
+        print(f"\n{Colors.BOLD}📅 Select Training Date:{Colors.ENDC}")
+        print(f"{Colors.CYAN}{'-'*50}{Colors.ENDC}")
+
+        for i, date in enumerate(sorted_dates, 1):
+            model_count = len(models_by_date[date])
+            plural = "model" if model_count == 1 else "models"
+            print(f"{Colors.BOLD}{i:2d}. {date}{Colors.ENDC} - {model_count} {plural}")
+
+        while True:
+            try:
+                choice = input(f"\n{Colors.BLUE}Select date (1-{len(sorted_dates)}) or 'q' to quit: {Colors.ENDC}")
+                if choice.lower() == 'q':
+                    return None
+
+                choice_idx = int(choice) - 1
+                if 0 <= choice_idx < len(sorted_dates):
+                    selected_date = sorted_dates[choice_idx]
+                    filtered_models = models_by_date[selected_date]
+                    break
+                else:
+                    print(f"{Colors.FAIL}❌ Invalid selection. Please choose 1-{len(sorted_dates)}{Colors.ENDC}")
+            except ValueError:
+                print(f"{Colors.FAIL}❌ Please enter a valid number{Colors.ENDC}")
+            except KeyboardInterrupt:
+                return None
+
+        # Step 3: Show models from selected date
+        print(f"\n{Colors.BOLD}📋 Models from {selected_date}:{Colors.ENDC}")
         print(f"{Colors.CYAN}{'-'*80}{Colors.ENDC}")
-        
-        for i, model in enumerate(available_models, 1):
+
+        for i, model in enumerate(filtered_models, 1):
             source_icon = "🖥️" if model['type'] == 'CLI' else "🌐"
             timestamp_display = model['timestamp'][:8] + '_' + model['timestamp'][8:]  # Format: YYYYMMDD_HHMMSS
             
@@ -1454,24 +1504,12 @@ class PeptiDIACLI:
                 train_methods += f" (+ {len(model['train_methods']) - 2} more)"
             print(f"     🏋️  Train: {train_methods}")
             print(f"     🧪 Test: {model['test_method']}")
-            
-            # Show performance summary
-            if model['type'] == 'CLI' and model.get('best_result'):
-                best = model['best_result']
-                print(f"     🎯 Best: {best['Additional_Peptides']} peptides @ {best['Actual_FDR']:.1f}% FDR")
-            elif model['type'] == 'Streamlit' and 'metadata' in model and 'training_results' in model['metadata']:
-                # Show Streamlit model performance
-                training_results = model['metadata']['training_results']
-                if training_results:
-                    best = max(training_results, key=lambda x: x.get('Additional_Peptides', 0))
-                    print(f"     🎯 Best: {best.get('Additional_Peptides', 0)} peptides @ {best.get('Actual_FDR', 0):.1f}% FDR")
-            
             print()
         
         # Get user selection
         while True:
             try:
-                choice = input(f"{Colors.BLUE}Select model (1-{len(available_models)}), 'd' for details, or 'q' to quit: {Colors.ENDC}")
+                choice = input(f"{Colors.BLUE}Select model (1-{len(filtered_models)}), 'd' for details, or 'q' to quit: {Colors.ENDC}")
                 if choice.lower() == 'q':
                     return None
                 elif choice.lower() == 'd':
@@ -1479,19 +1517,19 @@ class PeptiDIACLI:
                     model_choice = input(f"{Colors.BLUE}Enter model number to view training details: {Colors.ENDC}")
                     try:
                         model_idx = int(model_choice) - 1
-                        if 0 <= model_idx < len(available_models):
+                        if 0 <= model_idx < len(filtered_models):
                             # Show details and handle navigation - both 'c' and 'b' return to model selection
-                            self._display_model_training_details(available_models[model_idx])
+                            self._display_model_training_details(filtered_models[model_idx])
                         else:
                             print(f"{Colors.WARNING}⚠️  Invalid model number{Colors.ENDC}")
                     except ValueError:
                         print(f"{Colors.WARNING}⚠️  Please enter a valid number{Colors.ENDC}")
                     # Always continue to show model selection again after viewing details
                     continue
-                
+
                 choice_idx = int(choice) - 1
-                if 0 <= choice_idx < len(available_models):
-                    selected = available_models[choice_idx]
+                if 0 <= choice_idx < len(filtered_models):
+                    selected = filtered_models[choice_idx]
                     
                     # Show model details and handle user navigation
                     print(f"\n{Colors.GREEN}✅ Selected: {selected['id']}{Colors.ENDC}")
@@ -1506,7 +1544,7 @@ class PeptiDIACLI:
                         # User pressed 'b' to go back from training details, return to model list
                         continue
                 else:
-                    print(f"{Colors.FAIL}❌ Invalid selection. Please choose 1-{len(available_models)}{Colors.ENDC}")
+                    print(f"{Colors.FAIL}❌ Invalid selection. Please choose 1-{len(filtered_models)}{Colors.ENDC}")
             except ValueError:
                 print(f"{Colors.FAIL}❌ Please enter a valid number{Colors.ENDC}")
             except KeyboardInterrupt:
@@ -1585,14 +1623,25 @@ class PeptiDIACLI:
         print(f"{Colors.BLUE}Select ONE test method for inference{Colors.ENDC}")
         print(f"{Colors.CYAN}💡 Methods with ground truth will run in validation mode{Colors.ENDC}")
         print(f"{Colors.CYAN}💡 Methods without ground truth will run in discovery mode{Colors.ENDC}")
-        
+
+        # Show which methods were used in training
+        train_methods = selected_model.get('train_methods', [])
+        if train_methods:
+            print(f"\n{Colors.WARNING}📚 Training Methods (avoid for unbiased evaluation):{Colors.ENDC}")
+            for method in train_methods:
+                print(f"   • {method}")
+
         while True:
             try:
-                choice = input(f"{Colors.BOLD}Select test method (1-{len(available_methods)}): {Colors.ENDC}")
+                choice = input(f"\n{Colors.BOLD}Select test method (1-{len(available_methods)}): {Colors.ENDC}")
                 choice_idx = int(choice) - 1
                 if 0 <= choice_idx < len(available_methods):
                     selected_method = available_methods[choice_idx]
-                    
+
+                    # Check for data leakage
+                    if selected_method in train_methods:
+                        print(f"\n{Colors.WARNING}⚠️  Note: '{selected_method}' was used for training this model.{Colors.ENDC}")
+
                     # For triplicate groups, keep the group name so configured method handling can load all files
                     test_method = selected_method
                     if "_Group_" in selected_method:
@@ -1619,13 +1668,22 @@ class PeptiDIACLI:
         while True:
             try:
                 choice = input(f"{Colors.BLUE}Select FDR level (1-{len(fdr_options)}): {Colors.ENDC}")
+
+                # Handle empty input
+                if not choice.strip():
+                    print(f"{Colors.WARNING}⚠️  Please select an FDR level{Colors.ENDC}")
+                    continue
+
                 choice_idx = int(choice) - 1
                 if 0 <= choice_idx < len(fdr_options):
                     test_fdr = fdr_options[choice_idx]
                     break
                 else:
-                    print(f"{Colors.FAIL}❌ Invalid selection{Colors.ENDC}")
-            except (ValueError, KeyboardInterrupt):
+                    print(f"{Colors.FAIL}❌ Invalid selection. Please choose 1-{len(fdr_options)}{Colors.ENDC}")
+            except ValueError:
+                print(f"{Colors.WARNING}⚠️  Please enter a valid number (1-{len(fdr_options)}){Colors.ENDC}")
+            except KeyboardInterrupt:
+                print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
                 return None
         
         # Get target FDR levels from the trained model
@@ -1807,13 +1865,30 @@ class PeptiDIACLI:
             print(f"{Colors.BLUE}🎯 Making predictions...{Colors.ENDC}")
             y_pred = trained_model.predict_proba(X_test)[:, 1]
             
-            # Run optimization for different FDR targets (suppress verbose output)
-            print(f"{Colors.BLUE}📈 Optimizing thresholds for target FDRs...{Colors.ENDC}")
-            
-            # Calculate results with proper statistics
+            # Load trained thresholds from model metadata
+            print(f"{Colors.BLUE}📈 Using trained thresholds from model...{Colors.ENDC}")
+
+            # Extract thresholds from model metadata
+            trained_thresholds = {}
+            if 'metadata' in selected_model and 'training_results' in selected_model['metadata']:
+                for result in selected_model['metadata']['training_results']:
+                    trained_thresholds[result['Target_FDR']] = result['Threshold']
+                print(f"{Colors.GREEN}✅ Loaded {len(trained_thresholds)} trained thresholds{Colors.ENDC}")
+            else:
+                print(f"{Colors.FAIL}❌ No trained thresholds found in model metadata{Colors.ENDC}")
+                return False
+
+            # Calculate results with proper statistics using TRAINED thresholds
             results = []
             for target_fdr in test_config['target_fdr_levels']:
                 try:
+                    # Get the trained threshold for this FDR level
+                    if target_fdr not in trained_thresholds:
+                        print(f"{Colors.WARNING}⚠️  No trained threshold for {target_fdr}% FDR, skipping...{Colors.ENDC}")
+                        continue
+
+                    threshold = trained_thresholds[target_fdr]
+
                     if ground_truth is not None:
                         # Use ground truth for proper statistics calculation (like Streamlit)
                         # Create peptide-level aggregation like in the main API
@@ -1839,24 +1914,24 @@ class PeptiDIACLI:
                             peptide_df = peptide_df[additional_candidates_mask].reset_index(drop=True)
                             peptide_predictions = peptide_predictions[additional_candidates_mask]
                             peptide_labels = peptide_labels[additional_candidates_mask].reset_index(drop=True)
-                        
-                        # Use the same threshold optimization as training
-                        threshold, additional_peptides, actual_fdr = api._find_optimal_threshold(
-                            peptide_labels, peptide_predictions, target_fdr, verbose=False
-                        )
-                        
-                        if threshold is not None:
+
+                        # Apply the TRAINED threshold (don't recalibrate!)
+                        predictions = peptide_predictions >= threshold
+                        additional_peptides = predictions.sum()
+
+                        # Calculate actual FDR from ground truth
+                        tp = (peptide_labels & predictions).sum()
+                        fp = (~peptide_labels & predictions).sum()
+                        total_positives = tp + fp
+                        actual_fdr = (fp / total_positives * 100) if total_positives > 0 else 0
+
+                        if additional_peptides > 0:
                             # Calculate metrics like in training
                             total_validated = peptide_labels.sum()
-                            recovery_pct = additional_peptides / total_validated * 100 if total_validated > 0 else 0
-                            increase_pct = additional_peptides / baseline_count * 100 if baseline_count > 0 else 0
-                            
+                            recovery_pct = tp / total_validated * 100 if total_validated > 0 else 0
+                            increase_pct = tp / baseline_count * 100 if baseline_count > 0 else 0
+
                             # Calculate MCC
-                            predictions = peptide_predictions >= threshold
-                            tp = (peptide_labels & predictions).sum()
-                            fp = (~peptide_labels & predictions).sum()
-                            
-                            # MCC calculation
                             from sklearn.metrics import matthews_corrcoef
                             mcc = matthews_corrcoef(peptide_labels, predictions)
                             
@@ -2020,7 +2095,7 @@ class PeptiDIACLI:
         
         # Update note based on ground truth availability
         if has_ground_truth:
-            print(f"\n{Colors.GREEN}💡 Note: Results calculated with ground truth validation for accurate statistics{Colors.ENDC}")
+            print(f"\n{Colors.GREEN}💡 Note: Using trained thresholds. Ground truth used only for performance evaluation.{Colors.ENDC}")
         else:
             print(f"\n{Colors.BLUE}💡 Note: Discovery mode - No ground truth available. Results show peptide discovery at target FDR levels{Colors.ENDC}")
     

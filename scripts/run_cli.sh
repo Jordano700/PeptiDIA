@@ -1,7 +1,7 @@
 #!/bin/bash
 # PeptiDIA CLI Launcher Script
 
-echo "🧬 Starting PeptiDIA Command Line Interface..."
+echo "Starting PeptiDIA Command Line Interface..."
 
 # Select Python executable: prefer local venv, else current environment (supports Conda)
 if [ -x "./peptidia_env/bin/python" ]; then

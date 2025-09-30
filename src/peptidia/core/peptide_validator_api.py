@@ -128,17 +128,18 @@ class PeptideValidatorAPI:
     
     def __init__(self):
         """Initialize the API with default parameters."""
+        # Sept16 XGB-only configuration (apples-to-apples with baseline)
         self.optimal_params = {
-            'subsample': 0.8, 
-            'reg_lambda': 1.5, 
+            'subsample': 0.8,
+            'reg_lambda': 1.5,
             'reg_alpha': 0,
-            'n_estimators': 1000,
-            'min_child_weight': 1, 
-            'max_depth': 7,
-            'learning_rate': 0.08,
-            'gamma': 0, 
-            'colsample_bytree': 0.8,
-            'random_state': 42,
+            'n_estimators': 600,
+            'min_child_weight': 3,
+            'max_depth': 8,
+            'learning_rate': 0.1,
+            'gamma': 0,
+            'colsample_bytree': 0.6,
+            'random_state': 9649,
             'base_score': 0.5,  # prevent invalid defaults with logistic loss
             'tree_method': 'hist',
             'device': self._detect_gpu_device()
@@ -161,6 +162,8 @@ class PeptideValidatorAPI:
             ('Peak.Height', 'Ms1.Area'),
             ('Precursor.Quantity', 'Peak.Height')
         ]
+        # Default calibration method (overridden by run_analysis)
+        self.calibration_method = 'isotonic'
     
     def _detect_gpu_device(self) -> str:
         """Detect if GPU is available, fallback to CPU.
@@ -194,7 +197,9 @@ class PeptideValidatorAPI:
                     progress_callback: Optional[Callable] = None,
                     results_dir: Optional[str] = None,
                     feature_selection: Optional[Dict] = None,
-                    aggregation_method: str = 'max') -> Dict:
+                    aggregation_method: str = 'max',
+                    calibration_method: str = 'isotonic',
+                    model_type: str = "K-Sweep XGBoost") -> Dict:
         """
         Run complete peptide validation analysis.
         
@@ -231,6 +236,14 @@ class PeptideValidatorAPI:
             # Update XGBoost parameters if provided
             if xgb_params:
                 self.optimal_params.update(xgb_params)
+            # Store calibration preference (normalize)
+            try:
+                cm = str(calibration_method).strip().lower()
+                if cm not in ('isotonic', 'sigmoid'):
+                    cm = 'isotonic'
+                self.calibration_method = cm
+            except Exception:
+                self.calibration_method = 'isotonic'
             
             # Setup results directory
             if results_dir is None:
@@ -293,8 +306,11 @@ class PeptideValidatorAPI:
                 test_method, test_fdr, baseline_peptides, ground_truth_peptides)
             
             # Step 6: Train model
-            update_progress("Training ensemble model with advanced features")
-            model, training_features = self._train_model(train_data, y_train)
+            if model_type == "Legacy Ensemble":
+                update_progress("Training legacy ensemble model with advanced features")
+            else:
+                update_progress("Training K-sweep winning XGBoost model with advanced features")
+            model, training_features = self._train_model(train_data, y_train, model_type)
             
             # Step 6.5: Save trained model automatically (user-friendly)
             update_progress("Saving trained model")
@@ -330,7 +346,8 @@ class PeptideValidatorAPI:
                     'target_fdr_levels': target_fdr_levels,
                     'xgb_params': self.optimal_params,
                     'feature_selection': feature_selection,
-                    'aggregation_method': aggregation_method
+                    'aggregation_method': aggregation_method,
+                    'calibration_method': self.calibration_method
                 },
                 'summary': {
                     'baseline_peptides': len(baseline_peptides),
@@ -882,42 +899,62 @@ class PeptideValidatorAPI:
         # Clean and return
         return feats.replace([np.inf, -np.inf], np.nan).fillna(0)
     
-    def _train_model(self, train_data: pd.DataFrame, y_train: pd.Series) -> Tuple[object, List[str]]:
-        """Train the ensemble with calibration only (no warm-up split)."""
+    def _train_model(self, train_data: pd.DataFrame, y_train: pd.Series, model_type: str = "K-Sweep XGBoost") -> Tuple[object, List[str]]:
+        """Train model based on specified type: K-Sweep XGBoost or Legacy Ensemble."""
 
         # Create features
         X_train = self._make_advanced_features(train_data)
 
-        # Create ensemble model
-        xgb = XGBClassifier(**self.optimal_params)
+        if model_type == "Legacy Ensemble":
+            # LEGACY ENSEMBLE MODEL (XGBoost + Random Forest + Logistic Regression)
+            xgb = XGBClassifier(**self.optimal_params)
 
-        rf = RandomForestClassifier(
-            n_estimators=500,
-            max_depth=8,
-            min_samples_split=5,
-            min_samples_leaf=2,
-            random_state=42,
-            n_jobs=-1
-        )
+            rf = RandomForestClassifier(
+                n_estimators=500,
+                max_depth=8,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=42,
+                n_jobs=-1
+            )
 
-        lr = LogisticRegression(
-            C=1.0,
-            max_iter=1000,
-            random_state=42
-        )
+            lr = LogisticRegression(
+                C=1.0,
+                max_iter=1000,
+                random_state=42
+            )
 
-        ensemble = VotingClassifier(
-            estimators=[('xgb', xgb), ('rf', rf), ('lr', lr)],
-            voting='soft',
-            weights=[3, 2, 1]
-        )
+            ensemble = VotingClassifier(
+                estimators=[('xgb', xgb), ('rf', rf), ('lr', lr)],
+                voting='soft',
+                weights=[3, 2, 1]
+            )
 
-        # Calibrate with deterministic folds (handles fitting internally)
-        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-        calibrated_model = CalibratedClassifierCV(ensemble, method='isotonic', cv=skf)
-        calibrated_model.fit(X_train, y_train)
-
-        return calibrated_model, X_train.columns.tolist()
+            # Calibrate with deterministic folds (handles fitting internally)
+            skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            calibrated_model = CalibratedClassifierCV(ensemble, method=self.calibration_method, cv=skf)
+            calibrated_model.fit(X_train, y_train)
+            return calibrated_model, X_train.columns.tolist()
+        
+        else:
+            # K-SWEEP WINNING XGB MODEL (proven superior to ensemble)
+            xgb = XGBClassifier(**self.optimal_params)
+            
+            # Apply K-sweep calibration strategy: conditional calibration based on sample sizes
+            pos_samples = int(y_train.sum())
+            neg_samples = int(len(y_train) - pos_samples)
+            feasible_splits = max(2, min(3, pos_samples, neg_samples))
+            
+            if feasible_splits >= 2:
+                # Use same calibration as K-sweep: isotonic with 3-fold CV
+                skf = StratifiedKFold(n_splits=feasible_splits, shuffle=True, random_state=42)
+                calibrated_model = CalibratedClassifierCV(xgb, method=self.calibration_method, cv=skf)
+                calibrated_model.fit(X_train, y_train)
+                return calibrated_model, X_train.columns.tolist()
+            else:
+                # Fallback to raw XGBoost if insufficient samples for calibration
+                xgb.fit(X_train, y_train)
+                return xgb, X_train.columns.tolist()
     
     def _save_trained_model(self, model, training_features, results_dir, training_results=None):
         """Save trained model and feature information for later inference."""
@@ -995,8 +1032,18 @@ class PeptideValidatorAPI:
         else:
             return obj
     
-    def _find_optimal_threshold(self, y_true: pd.Series, y_scores: np.ndarray, target_fdr: float, verbose: bool = True) -> Tuple[float, int, float]:
-        """Find the optimal threshold that achieves exactly the target FDR."""
+    def _find_optimal_threshold(self, y_true: pd.Series, y_scores: np.ndarray, target_fdr: float,
+                                previous_threshold: Optional[float] = None,
+                                previous_tp: Optional[int] = None,
+                                verbose: bool = True) -> Tuple[float, int, float]:
+        """Find threshold closest to target FDR with monotonic expansion support.
+
+        Chooses the threshold that minimizes |ActualFDR - target_fdr| with tie-breaker
+        on higher TP. If previous_threshold is provided, only considers thresholds
+        <= previous_threshold to ensure non-increasing thresholds across increasing
+        target FDRs. If previous_tp is provided, ensures selected TP >= previous_tp
+        when possible (monotonic expansion of peptide counts).
+        """
         y_true_arr = np.array(y_true.values if hasattr(y_true, 'values') else y_true)
         y_scores_arr = np.array(y_scores)
         
@@ -1027,85 +1074,75 @@ class PeptideValidatorAPI:
             tp_scores = y_scores_arr[y_true_arr == 1]
             fp_scores = y_scores_arr[y_true_arr == 0]
         
-        best_threshold = None
-        best_peptides = 0
-        best_actual_fdr = float('inf')
-        
-        # Try different thresholds - use more granular approach
-        # For low FDR levels, we need to be more precise about threshold selection
-        
-        # For low FDRs, we need to find intermediate thresholds between the very high scores
-        if target_fdr <= 5.0:
-            # Get the top unique scores
-            unique_scores = np.unique(y_scores_sorted)
-            top_scores = unique_scores[-20:]  # Take top 20 unique scores
-            
-            # Create a much denser grid between these top scores and lower scores
-            if len(unique_scores) > 20:
-                # Use the available range, but don't go beyond array bounds
-                min_index = min(100, len(unique_scores))  # Use available scores or 100, whichever is smaller
-                min_grid = unique_scores[-min_index]  # Go deeper into the score range
-                max_grid = np.max(y_scores_sorted)
-                # Create a very dense grid with 5000 points
-                threshold_grid = np.linspace(min_grid, max_grid, 5000)
+        # Build candidate thresholds at unique score levels using cumulative sums
+        # Identify last index for each unique score value
+        unique_scores, last_indices = np.unique(y_scores_sorted, return_index=False, return_counts=False), None
+        # np.unique cannot directly give last indices; compute positions where score changes
+        # Approach: find indices where next value differs
+        diffs = np.r_[True, y_scores_sorted[1:] != y_scores_sorted[:-1]]
+        unique_threshold_indices = np.where(diffs)[0]  # first occurrence indices
+        # We want last occurrence indices for selecting >= threshold; compute next first-1
+        last_occ_indices = np.r_[unique_threshold_indices[1:] - 1, len(y_scores_sorted) - 1]
+        thresholds = y_scores_sorted[last_occ_indices]
+
+        # Cumulative TP up to each index
+        cum_tp = np.cumsum(y_true_sorted)
+
+        # Prepare candidates
+        candidates = []
+        for idx, thr in zip(last_occ_indices, thresholds):
+            if previous_threshold is not None and thr > previous_threshold + 1e-12:
+                # Enforce non-increasing thresholds across targets
+                continue
+            total = idx + 1
+            tp = int(cum_tp[idx])
+            fp = int(total - tp)
+            if total == 0:
+                continue
+            actual_fdr = (fp / total) * 100.0
+            candidates.append((thr, tp, fp, actual_fdr))
+
+        if not candidates:
+            # Fallback: no candidate after applying previous_threshold constraint
+            # Use previous_threshold if provided, else return None
+            if previous_threshold is not None:
+                # Compute metrics at previous_threshold
+                predictions = y_scores_arr >= previous_threshold
+                total = int(predictions.sum())
+                if total == 0:
+                    return previous_threshold, 0, 0.0
+                tp = int((y_true_arr & predictions).sum())
+                fp = int((~y_true_arr & predictions).sum())
+                actual_fdr = (fp / (tp + fp)) * 100.0 if (tp + fp) > 0 else 0.0
+                return previous_threshold, tp, actual_fdr
+            return None, 0, float('inf')
+
+        # Select candidate closest to target FDR
+        def candidate_key(c):
+            thr, tp, fp, fdr = c
+            return (abs(fdr - target_fdr), -tp, -thr)  # prefer closer FDR, then more TP, then higher thr
+
+        best_thr, best_tp, best_fp, best_fdr = min(candidates, key=candidate_key)
+
+        # Enforce monotonic TP expansion if requested
+        if previous_tp is not None and best_tp < previous_tp:
+            feasible = [c for c in candidates if c[1] >= previous_tp]
+            if feasible:
+                best_thr, best_tp, best_fp, best_fdr = min(feasible, key=candidate_key)
             else:
-                # Fallback if not enough unique scores
-                threshold_grid = unique_scores
-        else:
-            # For higher FDRs, use unique thresholds from data
-            threshold_grid = np.unique(y_scores_sorted)
-        
-        valid_thresholds_found = 0
-        
-        # Deterministic threshold iteration: highest to lowest, stable sorting
-        threshold_grid_sorted = np.array(sorted(threshold_grid))
-        for threshold in threshold_grid_sorted[::-1]:  # Start from highest threshold
-            predictions = y_scores_arr >= threshold
-            if predictions.sum() == 0:
-                continue
-                
-            tp = (y_true_arr & predictions).sum()
-            fp = (~y_true_arr & predictions).sum()
-            
-            if tp + fp == 0:
-                continue
-                
-            actual_fdr = fp / (tp + fp) * 100
-            
-            # Accept thresholds that are within tolerance of target FDR
-            # Allow some flexibility for better progression across FDR levels
-            tolerance = max(0.5, target_fdr * 0.1)  # At least 0.5% tolerance, or 10% of target
-            
-            if actual_fdr <= target_fdr + tolerance:
-                valid_thresholds_found += 1
-                if verbose and valid_thresholds_found <= 3:  # Debug first few valid thresholds
-                    print(f"  Valid threshold {valid_thresholds_found}: {threshold:.6f} -> TP:{tp}, FP:{fp}, FDR:{actual_fdr:.1f}%")
-                
-                # Prefer thresholds that are closer to target FDR (but not over)
-                # If actual FDR is over target, penalize but still consider
-                if actual_fdr <= target_fdr:
-                    score = tp  # Prefer more peptides if under target
-                else:
-                    score = tp * 0.5  # Penalize if over target but within tolerance
-                
-                # Deterministic tie-breaking: prefer higher threshold first, then more peptides
-                if best_threshold is None:
-                    best_threshold = threshold
-                    best_peptides = tp
-                    best_actual_fdr = actual_fdr
-                else:
-                    current_score = (best_peptides if best_actual_fdr <= target_fdr else best_peptides * 0.5)
-                    if score > current_score:
-                        best_threshold = threshold
-                        best_peptides = tp
-                        best_actual_fdr = actual_fdr
-        
+                # No feasible that preserves TP; stick to previous threshold metrics
+                if previous_threshold is not None:
+                    predictions = y_scores_arr >= previous_threshold
+                    total = int(predictions.sum())
+                    tp_prev = int((y_true_arr & predictions).sum())
+                    fp_prev = int((~y_true_arr & predictions).sum())
+                    fdr_prev = (fp_prev / (tp_prev + fp_prev)) * 100.0 if (tp_prev + fp_prev) > 0 else 0.0
+                    return previous_threshold, tp_prev, fdr_prev
+
         if verbose:
-            threshold_str = f"{best_threshold:.6f}" if best_threshold is not None else "None"
-            print(f"  ✅ Final: threshold={threshold_str}, peptides={best_peptides:,}, FDR={best_actual_fdr:.1f}%")
-            print(f"  Valid thresholds found: {valid_thresholds_found}")
-        
-        return best_threshold, best_peptides, best_actual_fdr
+            print(f"  ✅ Final: threshold={best_thr:.6f}, peptides={best_tp:,}, FDR={best_fdr:.1f}%")
+
+        return best_thr, best_tp, best_fdr
     
     def _aggregate_predictions_by_peptide(self, test_data: pd.DataFrame, predictions: np.ndarray, 
                                         labels: pd.Series, aggregation_method: str = 'max') -> Tuple[pd.DataFrame, np.ndarray, pd.Series]:
@@ -1202,10 +1239,17 @@ class PeptideValidatorAPI:
         # Now optimize thresholds using unique peptides
         results = []
         
+        last_threshold = None
+        last_tp = 0
         for target_fdr in sorted(target_fdr_levels):
             threshold, peptides, actual_fdr = self._find_optimal_threshold(
-                peptide_labels, peptide_predictions, target_fdr
+                peptide_labels, peptide_predictions, target_fdr,
+                previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
             )
+            # Update monotonic trackers
+            if threshold is not None:
+                last_threshold = threshold if last_threshold is None else min(last_threshold, threshold)
+                last_tp = max(last_tp, peptides)
             
             if threshold is not None:
                 # Calculate metrics on unique peptides
@@ -1248,7 +1292,8 @@ class PeptideValidatorAPI:
         results_df = pd.DataFrame(results)
         
         # 1. Method comparison plot
-        fig = plt.figure(figsize=(15, 10), facecolor=MATPLOT_THEME['background'])
+        # Use constrained_layout to avoid tight_layout warnings with colorbars
+        fig = plt.figure(figsize=(15, 10), facecolor=MATPLOT_THEME['background'], constrained_layout=True)
         gs = fig.add_gridspec(2, 3, hspace=0.32, wspace=0.28)
         fig.suptitle(
             'Comprehensive Performance Overview',
@@ -1376,14 +1421,12 @@ class PeptideValidatorAPI:
             ylabel='Peptides per FDR%'
         )
 
-        colorbar_ax = fig.add_axes([0.88, 0.14, 0.015, 0.29])
-        cbar = fig.colorbar(scatter, cax=colorbar_ax)
+        # Attach colorbar to ax4 without manual add_axes, compatible with constrained layout
+        cbar = fig.colorbar(scatter, ax=ax4, location='right', pad=0.02, fraction=0.06)
         cbar.ax.set_ylabel('Target FDR (%)', color=MATPLOT_THEME['text'])
         cbar.ax.tick_params(colors=MATPLOT_THEME['text'], labelsize=10)
         if cbar.outline is not None:
             cbar.outline.set_edgecolor(MATPLOT_THEME['border'])
-
-        fig.tight_layout(rect=[0, 0, 0.87, 0.94])
         plt.savefig(
             f"{results_dir}/plots/comprehensive_analysis.png",
             dpi=300,
@@ -1767,16 +1810,32 @@ class PeptideValidatorAPI:
                     # Save as HTML
                     fig.write_html(f"{results_dir}/feature_analysis/shap_importance_plotly.html")
 
-                    # Save as PNG (requires kaleido)
+                    # Save as PNG (requires kaleido >= 1.0.0 to avoid deprecation warnings)
                     try:
-                        fig.write_image(
-                            f"{results_dir}/feature_analysis/shap_importance_plotly.png",
-                            width=900,
-                            height=600,
-                            scale=2
-                        )
+                        try:
+                            # Prefer importlib.metadata (Py>=3.8) to check kaleido version
+                            import importlib.metadata as _imm
+                            _k_ver = _imm.version('kaleido')
+                        except Exception:
+                            _k_ver = None
+
+                        def _version_tuple(v):
+                            try:
+                                return tuple(int(p) for p in str(v).split('.')[:2])
+                            except Exception:
+                                return (0, 0)
+
+                        if _k_ver is None or _version_tuple(_k_ver) < (1, 0):
+                            print("ℹ️ Skipping PNG export: kaleido < 1.0.0 (to avoid deprecation warnings)")
+                        else:
+                            fig.write_image(
+                                f"{results_dir}/feature_analysis/shap_importance_plotly.png",
+                                width=900,
+                                height=600,
+                                scale=2
+                            )
                     except Exception:
-                        print("⚠️ Could not save PNG (kaleido not available)")
+                        print("⚠️ Could not save PNG (kaleido unavailable or misconfigured)")
 
                     # Save simplified SHAP data
                     shap_data = {
@@ -1904,7 +1963,10 @@ def run_peptide_validation(train_methods: List[str],
                           xgb_params: Optional[Dict] = None,
                           progress_callback: Optional[Callable] = None,
                           results_dir: Optional[str] = None,
-                          feature_selection: Optional[Dict] = None) -> Dict:
+                          feature_selection: Optional[Dict] = None,
+                          aggregation_method: str = 'max',
+                          calibration_method: str = 'isotonic',
+                          model_type: str = "K-Sweep XGBoost") -> Dict:
     """
     Convenience function to run peptide validation analysis.
     
@@ -1918,6 +1980,7 @@ def run_peptide_validation(train_methods: List[str],
         progress_callback: Optional callback for progress updates
         results_dir: Optional directory to save results
         feature_selection: Optional dictionary of feature selection options
+        aggregation_method: 'max' | 'mean' | 'weighted' peptide-level aggregation
         
     Returns:
         Dictionary containing analysis results and metadata
@@ -1932,7 +1995,10 @@ def run_peptide_validation(train_methods: List[str],
         xgb_params=xgb_params,
         progress_callback=progress_callback,
         feature_selection=feature_selection,
-        results_dir=results_dir
+        results_dir=results_dir,
+        aggregation_method=aggregation_method,
+        calibration_method=calibration_method,
+        model_type=model_type
     )
 
 

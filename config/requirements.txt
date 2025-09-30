@@ -11,7 +11,8 @@ pyarrow==20.0.0
 
 # Visualization
 plotly==6.2.0
-kaleido==0.2.1
+# Use Kaleido >=1.0.0 to avoid Plotly deprecation warnings
+kaleido>=1.0.0
 matplotlib==3.9.2
 seaborn==0.13.2
 
