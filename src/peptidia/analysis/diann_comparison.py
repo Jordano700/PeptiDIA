@@ -209,40 +209,55 @@ def get_user_choice(results_info):
             return None
 
 def load_data_files(test_method, test_fdr=50):
-    """Load baseline, test, and ground truth data files."""
+    """Load baseline, test, and ground truth data files for a specific sample."""
     dataset = test_method.split('_')[0]
-    
+
     print(f"{Colors.BLUE}🔍 Loading data for {Colors.BOLD}{test_method}{Colors.ENDC}")
     print(f"{Colors.BLUE}   Dataset: {Colors.BOLD}{dataset}{Colors.ENDC}")
-    
-    # Define file patterns
-    baseline_pattern = f"data/{dataset}/short_gradient/FDR_1/*FDR1.parquet"
-    test_pattern = f"data/{dataset}/short_gradient/FDR_{test_fdr}/*FDR{test_fdr}.parquet" 
-    gt_pattern = f"data/{dataset}/long_gradient/FDR_1/*FDR1.parquet"
-    
+
+    # Extract sample identifier from test_method
+    # Format: Dataset_Date_Instrument_Sample_Run
+    # We need to match the specific sample file
+    sample_parts = test_method.split('_')
+    # Reconstruct the file identifier (everything except dataset)
+    sample_identifier = '_'.join(sample_parts[1:])
+
+    # Define file patterns for the specific sample
+    baseline_pattern = f"data/{dataset}/short_gradient/FDR_1/*{sample_identifier}_FDR1.parquet"
+    test_pattern = f"data/{dataset}/short_gradient/FDR_{test_fdr}/*{sample_identifier}_FDR{test_fdr}.parquet"
+
+    # For ground truth, we need to match the sample but it may have different date/instrument
+    # Extract just the sample ID (last parts like C139_01)
+    sample_id = '_'.join(sample_parts[-2:])  # e.g., C139_01
+    gt_pattern = f"data/{dataset}/long_gradient/FDR_1/*{sample_id}_FDR1.parquet"
+
     # Find files
     baseline_files = glob.glob(baseline_pattern)
     test_files = glob.glob(test_pattern)
     gt_files = glob.glob(gt_pattern)
-    
+
+    print(f"{Colors.BLUE}   Sample ID: {Colors.BOLD}{sample_id}{Colors.ENDC}")
     print(f"{Colors.BLUE}   Found: {Colors.BOLD}{len(baseline_files)} baseline, {len(test_files)} test, {len(gt_files)} GT{Colors.ENDC} files")
-    
+
     if not baseline_files:
-        raise FileNotFoundError(f"No baseline files found for {dataset} (pattern: {baseline_pattern})")
+        raise FileNotFoundError(f"No baseline file found for {test_method} (pattern: {baseline_pattern})")
     if not test_files:
-        raise FileNotFoundError(f"No test files found for {dataset} at {test_fdr}% FDR (pattern: {test_pattern})")
+        raise FileNotFoundError(f"No test file found for {test_method} at {test_fdr}% FDR (pattern: {test_pattern})")
     if not gt_files:
-        raise FileNotFoundError(f"No ground truth files found for {dataset} (pattern: {gt_pattern})")
-    
-    # Load and combine files
-    print(f"{Colors.BLUE}   Loading data files...{Colors.ENDC}")
-    
-    baseline_data = pd.concat([pd.read_parquet(f) for f in baseline_files], ignore_index=True)
-    test_data = pd.concat([pd.read_parquet(f) for f in test_files], ignore_index=True)
-    gt_data = pd.concat([pd.read_parquet(f) for f in gt_files], ignore_index=True)
-    
+        raise FileNotFoundError(f"No ground truth file found for sample {sample_id} (pattern: {gt_pattern})")
+
+    if len(baseline_files) > 1 or len(test_files) > 1 or len(gt_files) > 1:
+        print(f"{Colors.WARNING}⚠️  Multiple files found, using first match{Colors.ENDC}")
+
+    # Load single files (use first match if multiple)
+    print(f"{Colors.BLUE}   Loading single sample files...{Colors.ENDC}")
+
+    baseline_data = pd.read_parquet(baseline_files[0])
+    test_data = pd.read_parquet(test_files[0])
+    gt_data = pd.read_parquet(gt_files[0])
+
     print(f"{Colors.GREEN}   ✅ Loaded: {len(baseline_data):,} baseline, {len(test_data):,} test, {len(gt_data):,} GT peptides{Colors.ENDC}")
-    
+
     return baseline_data, test_data, gt_data
 
 def calculate_peptide_sets(baseline_data, test_data, gt_data):

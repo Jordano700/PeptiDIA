@@ -896,6 +896,8 @@ def clear_analysis_states():
     st.session_state.inference_complete = False
     st.session_state.results_data = None
     st.session_state.inference_results = None
+    st.session_state.show_comparison = False
+    st.session_state.selected_runs = []
 
 @st.cache_data(ttl=1800)  # Cache for 30 minutes
 def discover_available_files():
@@ -1617,16 +1619,6 @@ def display_run_comparison():
                 st.dataframe(results_df, use_container_width=True)
             else:
                 st.info("No detailed results available for this run")
-    
-    # Download comparison data
-    st.markdown("### 💾 Export Comparison")
-    csv_data = comparison_df.to_csv(index=False)
-    st.download_button(
-        label="📄 Download Comparison CSV",
-        data=csv_data,
-        file_name=f"run_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv"
-    )
 
 def main():
     """Main application function with Training/Inference mode selection."""

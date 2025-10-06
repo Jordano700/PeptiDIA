@@ -85,6 +85,14 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Plots and generated images
+plots/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
 # GitHub workflows and settings
 .github/
 
