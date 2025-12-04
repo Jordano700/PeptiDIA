@@ -73,17 +73,14 @@ PeptiDIA has **3 simple modes** to guide you through the process:
 - Set up ground truth matching
 
 ### 2. 🎯 **Training Mode** 
-- AI learns from your data
-- Shows training progress and results 
+- The machine learning models learn from your data
+- Shows training progress and results in a visualize and interactive format 
 
 ### 3. 🚀 **Inference Mode**
 - Apply trained models to find new peptides
-- Get results instantly
-- Download your discoveries
+- Get results rapdily
+- Download the results in a tabular format
 
-## That's it! 🎉
-
-The interface walks you through each step - no guessing needed!
 
 ## Command Line Interface (CLI) 💻
 
@@ -99,7 +96,7 @@ For advanced users, PeptiDIA also provides a command-line interface:
 - 🧭 **Guided navigation** - Step-by-step workflow
 - 🎯 **Better usability** - No command-line complexity
 
-The web interface provides all functionality with a much more intuitive experience!
+The web interface provides all functionality with a much more intuitive experienc.
 
 ## License
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
@@ -126,7 +123,7 @@ BibTeX format:
 ## Need Help?
 
 - 🐛 Report issues on GitHub
-- 💡 Questions? Open an issue!
+- 💡 Questions? Open an issuef
 
 ---
 <sub>PeptiDIA v0.7</sub>
