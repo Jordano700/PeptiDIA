@@ -147,13 +147,15 @@ class PeptideValidatorAPI:
         
         # Default feature selection settings to ensure internal helpers work
         # even when called outside of run_analysis (e.g., scripts using the API directly).
+        self._leakage_guard_columns = {'source_fdr'}
+
         self.feature_selection = {
             'use_diann_quality': True,
             'use_sequence_features': True,
             'use_ms_features': True,
             'use_statistical_features': True,
             'use_library_features': True,
-            'excluded_features': []
+            'excluded_features': list(self._leakage_guard_columns)
         }
 
         self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
@@ -232,6 +234,10 @@ class PeptideValidatorAPI:
                 'use_library_features': True,
                 'excluded_features': []
             }
+            # Always guard against data-leakage columns
+            current_excluded = set(self.feature_selection.get('excluded_features', []))
+            current_excluded.update(self._leakage_guard_columns)
+            self.feature_selection['excluded_features'] = list(sorted(current_excluded))
             
             # Update XGBoost parameters if provided
             if xgb_params:
@@ -828,7 +834,11 @@ class PeptideValidatorAPI:
                    'Run.Index']
         library_cols = ['Precursor.Lib.Index', 'PG.MaxLFQ', 'Fragment.Info', 'source_fdr']
         
+        leakage_cols = {c.lower() for c in getattr(self, '_leakage_guard_columns', {'source_fdr'})}
+
         for col in df.columns:
+            if col.lower() in leakage_cols:
+                continue
             if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
                 # Check if this feature should be included based on feature selection
                 include_feature = False
@@ -844,7 +854,8 @@ class PeptideValidatorAPI:
                     include_feature = True
                 
                 # Check if feature is explicitly excluded
-                if col in self.feature_selection.get('excluded_features', []):
+                excluded = set(self.feature_selection.get('excluded_features', []))
+                if col in excluded or col.lower() in leakage_cols:
                     include_feature = False
                 
                 if include_feature:

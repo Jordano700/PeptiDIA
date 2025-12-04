@@ -11,7 +11,7 @@
 - [4. Dataset Preparation](#4-dataset-preparation)
 - [5. Using PeptiDIA](#5-using-peptidia)
   - [5.1 Web Interface Workflow](#51-web-interface-workflow)
-  - [5.2 Command Line Interface (CLI)](#52-command-line-interface-cli)
+  - [5.2 Command Line Interface (CLI)](#52-command-line-interface-cli)3
   - [5.3 Comparison Workflow](#53-comparison-workflow)
 - [6. Results & Outputs](#6-results--outputs)
 - [7. Troubleshooting](#7-troubleshooting)

@@ -1660,7 +1660,7 @@ def main():
 
 def show_landing_page():
     """Display the landing page with mode selection."""
-    st.markdown("## 🚀 Choose Your Workflow")
+    st.markdown("##  Choose Mode")
     st.markdown("Select how you want to use PeptiDIA:")
     
     # Landing-page-specific CSS to guarantee identical button appearance
@@ -2415,9 +2415,10 @@ def show_training_interface():
         # Analysis in progress
         st.markdown("## 🔬 Training in Progress")
         
-        # DNA loading animation - check local paths only
+        # PeptiDIA loading animation - check local paths only
         possible_paths = [
-            "./assets/dna_loading.gif"
+            "./assets/dna_loading.gif",
+            "./assets/peptidia_loading.gif"
         ]
         
         gif_loaded = False
@@ -3306,8 +3307,7 @@ def display_feature_importance_tab(results_dir: str):
                     )
 
                 with col2:
-                    st.metric("Total Features", len(feature_df))
-                    st.metric("Non-zero Features", len(feature_df_table))
+                    st.metric("Total Features", len(feature_df_table))
                     st.metric("Top Feature", f"{top_features.iloc[0]['importance_pct']:.2f}%")
 
                 # Download option for full feature importance data
@@ -6015,7 +6015,7 @@ def show_setup_interface():
     st.markdown("---")
     
     # Subtitle
-    st.markdown("*Configure ground truth mapping for your datasets visually - no JSON editing required!*")
+    st.markdown("*Configure ground truth mapping for your datasets visually - no JSON editing required*")
     
     # Discover available files first
     try:
