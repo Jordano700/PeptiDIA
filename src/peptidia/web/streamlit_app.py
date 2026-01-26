@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 🎯 PeptiDIA - STREAMLIT FRONTEND
-================================================================================
+================================================================================================
 
-Built for researchers to easily configure and run peptide validation analyses
-without programming knowledge.
-================================================================================
+Built for researchers to easily configure and discover additional peptides in their DIA-NN data
+================================================================================================
 """
 
 import streamlit as st
@@ -1262,44 +1261,8 @@ def display_run_history():
     # Limit to most recent 10 runs for performance
     recent_runs = st.session_state.run_history[-10:]
     
-    st.sidebar.markdown(f"### 📜 Run History (10 most recent runs)")
-    
-    # History management options
-    with st.sidebar.expander("⚙️ History Management", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("💾 Export CSV", help="Export all run history to CSV", use_container_width=True):
-                history_df = export_history_to_csv(st.session_state.run_history)
-                if history_df is not None:
-                    csv_data = history_df.to_csv(index=False)
-                    st.download_button(
-                        label="📄 Download History CSV",
-                        data=csv_data,
-                        file_name=f"run_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.warning("No history to export")
-        
-        with col2:
-            if st.button("🗑️ Clear All", help="Clear all run history permanently", use_container_width=True):
-                if clear_persistent_history():
-                    st.session_state.run_history = []
-                    st.success("History cleared!")
-                    time.sleep(0.5)  # Brief pause to show success message
-                    st.rerun()
-                else:
-                    st.error("Failed to clear history")
-        
-        # Show history file info
-        history_file = get_history_file_path()
-        if os.path.exists(history_file):
-            file_size = os.path.getsize(history_file) / 1024  # KB
-            st.caption(f"📁 History file: {file_size:.1f} KB")
-        else:
-            st.caption("📁 No persistent history file")
-    
+    st.sidebar.markdown(f"### 📜 Run History")
+
     # Add comparison mode toggle
     comparison_mode = st.sidebar.checkbox("🔍 Comparison Mode", help="Select multiple runs to compare")
     
@@ -1641,7 +1604,7 @@ def main():
         show_landing_page()
         # Add version footer for landing page
         st.markdown("---")
-        st.markdown("**PeptiDIA v0.7**")
+        st.markdown("**PeptiDIA v0.8**")
         return
     
     # Show selected mode interface
@@ -1654,7 +1617,7 @@ def main():
     
     # Add version footer at bottom of all pages
     st.markdown("---")
-    st.markdown("**PeptiDIA v0.7**")
+    st.markdown("**PeptiDIA v0.8**")
 
 def show_landing_page():
     """Display the landing page with mode selection."""
@@ -1686,19 +1649,13 @@ def show_landing_page():
     
     with col1:
         # Container with fixed button positioning
-        container_height = "400px"  # Fixed container height
-        
+        container_height = "200px"  # Smaller without bullet lists
+
         st.markdown(f"""
         <div style="position: relative; height: {container_height}; margin: 1rem 0;">
             <div style="text-align: center; padding: 2rem; border: 2px solid #1E40AF; border-radius: 10px; height: calc(100% - 60px); display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; overflow: hidden;">
-                <h2 style="color: #1E40AF; margin-bottom: 1rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">⚙️ SETUP MODE</h2>
-                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 1rem 0; line-height: 1.4;">Configure your datasets visually with drag & drop</p>
-                <ul style="text-align: left; margin: 1rem 0; font-size: clamp(0.8rem, 1.5vw, 1rem); line-height: 1.5; padding-left: 1.2rem;">
-                    <li style="margin-bottom: 0.5rem;">Visual ground truth mapping</li>
-                    <li style="margin-bottom: 0.5rem;">Drag and drop interface</li>
-                    <li style="margin-bottom: 0.5rem;">No JSON editing required</li>
-                    <li style="margin-bottom: 0.5rem;">Save configurations easily</li>
-                </ul>
+                <h2 style="color: #1E40AF; margin-bottom: 0.5rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">⚙️ SETUP MODE</h2>
+                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 0.5rem 0; line-height: 1.4; color: #6B7280;">Add datasets & configure ground truth mapping</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1718,14 +1675,8 @@ def show_landing_page():
         st.markdown(f"""
         <div style="position: relative; height: {container_height}; margin: 1rem 0;">
             <div style="text-align: center; padding: 2rem; border: 2px solid #7C3AED; border-radius: 10px; height: calc(100% - 60px); display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; overflow: hidden;">
-                <h2 style="color: #7C3AED; margin-bottom: 1rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">🧠 TRAINING MODE</h2>
-                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 1rem 0; line-height: 1.4;">Train new machine learning models on your peptide data</p>
-                <ul style="text-align: left; margin: 1rem 0; font-size: clamp(0.8rem, 1.5vw, 1rem); line-height: 1.5; padding-left: 1.2rem;">
-                    <li style="margin-bottom: 0.5rem;">Configure training parameters</li>
-                    <li style="margin-bottom: 0.5rem;">Select multiple methods and FDR levels</li>
-                    <li style="margin-bottom: 0.5rem;">Analyze feature importance</li>
-                    <li style="margin-bottom: 0.5rem;">Save trained models for reuse</li>
-                </ul>
+                <h2 style="color: #7C3AED; margin-bottom: 0.5rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">🧠 TRAINING MODE</h2>
+                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 0.5rem 0; line-height: 1.4; color: #6B7280;">Train models with your peptide data</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1745,14 +1696,8 @@ def show_landing_page():
         st.markdown(f"""
         <div style="position: relative; height: {container_height}; margin: 1rem 0;">
             <div style="text-align: center; padding: 2rem; border: 2px solid #C026D3; border-radius: 10px; height: calc(100% - 60px); display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; overflow: hidden;">
-                <h2 style="color: #C026D3; margin-bottom: 1rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">🔮 INFERENCE MODE</h2>
-                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 1rem 0; line-height: 1.4;">Use pre-trained models to predict on new peptide data</p>
-                <ul style="text-align: left; margin: 1rem 0; font-size: clamp(0.8rem, 1.5vw, 1rem); line-height: 1.5; padding-left: 1.2rem;">
-                    <li style="margin-bottom: 0.5rem;">Load saved models</li>
-                    <li style="margin-bottom: 0.5rem;">Predict on any compatible dataset</li>
-                    <li style="margin-bottom: 0.5rem;">Cross-dataset model evaluation</li>
-                    <li style="margin-bottom: 0.5rem;">Compare model performances</li>
-                </ul>
+                <h2 style="color: #C026D3; margin-bottom: 0.5rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem);">🔮 INFERENCE MODE</h2>
+                <p style="font-size: clamp(0.9rem, 1.8vw, 1.1rem); margin: 0.5rem 0; line-height: 1.4; color: #6B7280;">Apply trained models to new data</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -3791,7 +3736,7 @@ def display_export_options(results, include_general_exports: bool = True):
                 summ = results.get('summary', {})
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 rows.extend([
-                    ("PeptiDIA", "v0.7"),
+                    ("PeptiDIA", "v0.8"),
                     ("Exported", ts),
                     ("Train Methods", ", ".join(cfg.get('train_methods', []))),
                     ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
@@ -6519,10 +6464,379 @@ def save_fdr_results_to_streamlit_directory(results_df, config, results_name=Non
         
         st.success(f"✅ Results saved to: {results_dir}")
         return results_dir
-        
+
     except Exception as e:
         st.error(f"Error saving results: {str(e)}")
         return None
+
+
+def show_add_dataset_uploader():
+    """Display file upload interface for adding new datasets."""
+    # Show success message if dataset was just added (after rerun)
+    if 'dataset_add_success' in st.session_state:
+        info = st.session_state.pop('dataset_add_success')
+        st.success(f"✅ Dataset '{info['name']}' created successfully!")
+        st.success(f"📁 Saved {info['files']} files to `data/{info['name']}/`")
+        if info.get('fdr_levels'):
+            st.info(f"📊 Available FDR levels: {', '.join(info['fdr_levels'])}%")
+        st.info("🎉 Your dataset is now available on the main page and in Training/Inference modes!")
+
+    # Inject custom CSS for drag-and-drop styling
+    st.markdown("""
+        <style>
+        [data-testid="stFileUploader"] {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 2px dashed #2E86AB !important;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        [data-testid="stFileUploader"]:hover {
+            border-color: #6366F1 !important;
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        }
+        .dataset-name-confirmed {
+            background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+            border: 2px solid #22c55e !important;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin: 8px 0;
+        }
+        .dataset-name-pending {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b !important;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin: 8px 0;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 📁 Add New Dataset")
+
+    # Dataset name input with visual feedback
+    st.markdown("#### Step 1: Name Your Dataset")
+    dataset_name_raw = st.text_input(
+        "Dataset Name:",
+        placeholder="e.g., MyProteomicsData",
+        help="Give your dataset a unique name (no spaces, use underscores).",
+        key="dataset_name_input"
+    )
+
+    # Clean the dataset name
+    dataset_name = ""
+    if dataset_name_raw:
+        dataset_name = dataset_name_raw.strip().replace(" ", "_").replace("-", "_")
+        dataset_name = ''.join(c for c in dataset_name if c.isalnum() or c == '_')
+
+    # Visual feedback for dataset name
+    if dataset_name:
+        existing_path = os.path.join("data", dataset_name)
+        if os.path.exists(existing_path):
+            st.markdown(f"""
+                <div class="dataset-name-pending">
+                    ⚠️ <strong>Dataset "{dataset_name}" already exists!</strong> Files will be added to the existing dataset.
+                </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+                <div class="dataset-name-confirmed">
+                    ✅ <strong>Dataset name confirmed:</strong> <code>{dataset_name}</code>
+                </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <div class="dataset-name-pending">
+                ⏳ <strong>Enter a dataset name above</strong> to continue...
+            </div>
+        """, unsafe_allow_html=True)
+
+    # Emoji picker and description
+    col_emoji, col_desc = st.columns([1, 3])
+
+    with col_emoji:
+        st.markdown("**Icon:**")
+        emoji_options = [
+            "🧬", "🔬", "🧪", "💉", "🫀", "🫁", "🧠", "🦠", "🩸", "💊",
+            "🐭", "🐀", "🐁", "🌡️", "⚗️", "🔭", "📊", "📈", "💎", "🌟",
+            "🎯", "🔥", "⚡", "🟢", "🔵", "🟣", "🟠", "🔴", "🟡", "❤️", "💚", "💜", "🧡"
+        ]
+        dataset_icon = st.selectbox(
+            "Choose icon",
+            options=emoji_options,
+            index=0,
+            key="dataset_icon_select",
+            label_visibility="collapsed"
+        )
+        st.markdown(f"<div style='font-size: 2rem; text-align: center;'>{dataset_icon}</div>", unsafe_allow_html=True)
+
+    with col_desc:
+        st.markdown("**Description:** *(shown on main page)*")
+        dataset_description = st.text_area(
+            "Description",
+            placeholder="e.g., Human liver proteomics - 10 samples from clinical study XYZ",
+            help="A brief description of your dataset that will appear on the main page",
+            key="dataset_description_input",
+            height=80,
+            label_visibility="collapsed"
+        )
+
+    # Preview
+    if dataset_name:
+        st.markdown("**Preview (how it will appear on main page):**")
+        preview_desc = dataset_description if dataset_description else f"{dataset_name} proteomics dataset"
+        st.markdown(f"""
+            <div style="border: 2px solid #E5E7EB; border-radius: 10px; padding: 1rem; margin: 0.5rem 0; max-width: 350px;">
+                <h4 style="color: #374151; margin: 0 0 0.5rem 0; font-size: 1rem;">{dataset_icon} {dataset_name} Dataset</h4>
+                <p style="color: #6B7280; margin: 0; font-size: 0.8rem; line-height: 1.3;">{preview_desc}</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("#### Step 2: Upload Your Files")
+    st.markdown("**Drag & drop** or **click to browse** - select files for each category:")
+
+    # Create tabs for different file categories
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🎯 Ground Truth",
+        "📋 Baseline (FDR 1%)",
+        "📈 Training (FDR 20%)",
+        "📈 Training (FDR 50%)"
+    ])
+
+    with tab1:
+        st.markdown("**🎯 Ground Truth Files** - Long gradient at 1% FDR")
+        ground_truth_files = st.file_uploader(
+            "Drag & drop parquet files here",
+            type=['parquet'],
+            accept_multiple_files=True,
+            key="gt_uploader",
+            label_visibility="collapsed"
+        )
+        if ground_truth_files:
+            st.success(f"✅ {len(ground_truth_files)} ground truth file(s) ready")
+
+    with tab2:
+        st.markdown("**📋 Baseline Files** - Short gradient at 1% FDR")
+        baseline_files = st.file_uploader(
+            "Drag & drop parquet files here",
+            type=['parquet'],
+            accept_multiple_files=True,
+            key="baseline_uploader",
+            label_visibility="collapsed"
+        )
+        if baseline_files:
+            st.success(f"✅ {len(baseline_files)} baseline file(s) ready")
+
+    with tab3:
+        st.markdown("**📈 Training Files (20% FDR)** - Short gradient")
+        training_20_files = st.file_uploader(
+            "Drag & drop parquet files here",
+            type=['parquet'],
+            accept_multiple_files=True,
+            key="fdr20_uploader",
+            label_visibility="collapsed"
+        )
+        if training_20_files:
+            st.success(f"✅ {len(training_20_files)} FDR 20% file(s) ready")
+
+    with tab4:
+        st.markdown("**📈 Training Files (50% FDR)** - Short gradient")
+        training_50_files = st.file_uploader(
+            "Drag & drop parquet files here",
+            type=['parquet'],
+            accept_multiple_files=True,
+            key="fdr50_uploader",
+            label_visibility="collapsed"
+        )
+        if training_50_files:
+            st.success(f"✅ {len(training_50_files)} FDR 50% file(s) ready")
+
+    st.markdown("---")
+
+    # Summary
+    total_files = len(ground_truth_files or []) + len(baseline_files or []) + \
+                  len(training_20_files or []) + len(training_50_files or [])
+
+    if total_files > 0:
+        categories = []
+        if ground_truth_files:
+            categories.append(f"🎯 {len(ground_truth_files)} ground truth")
+        if baseline_files:
+            categories.append(f"📋 {len(baseline_files)} baseline")
+        if training_20_files:
+            categories.append(f"📈 {len(training_20_files)} FDR 20%")
+        if training_50_files:
+            categories.append(f"📈 {len(training_50_files)} FDR 50%")
+        st.markdown(f"**📊 Summary:** {' • '.join(categories)}")
+
+    # Check if we have at least one elevated FDR level
+    has_elevated_fdr = bool(training_20_files) or bool(training_50_files)
+    if total_files > 0 and not has_elevated_fdr:
+        st.warning("⚠️ **Missing elevated FDR files!** You need FDR 20% or FDR 50% files to run inference/training.")
+
+    # Save button
+    if st.button("💾 Create Dataset & Save Files", type="primary", disabled=not dataset_name or not has_elevated_fdr):
+        if not dataset_name:
+            st.error("Please enter a dataset name!")
+            return False
+
+        try:
+            base_path = os.path.join("data", dataset_name)
+            os.makedirs(base_path, exist_ok=True)
+            saved_count = 0
+            available_fdr = []
+
+            # Ground truth files -> long_gradient/FDR_1/
+            if ground_truth_files:
+                gt_folder = os.path.join(base_path, "long_gradient", "FDR_1")
+                os.makedirs(gt_folder, exist_ok=True)
+                for f in ground_truth_files:
+                    with open(os.path.join(gt_folder, f.name), "wb") as out_file:
+                        out_file.write(f.getbuffer())
+                    saved_count += 1
+
+            # Baseline files -> short_gradient/FDR_1/
+            if baseline_files:
+                baseline_folder = os.path.join(base_path, "short_gradient", "FDR_1")
+                os.makedirs(baseline_folder, exist_ok=True)
+                for f in baseline_files:
+                    with open(os.path.join(baseline_folder, f.name), "wb") as out_file:
+                        out_file.write(f.getbuffer())
+                    saved_count += 1
+
+            # FDR 20% files
+            if training_20_files:
+                fdr20_folder = os.path.join(base_path, "short_gradient", "FDR_20")
+                os.makedirs(fdr20_folder, exist_ok=True)
+                available_fdr.append("20")
+                for f in training_20_files:
+                    with open(os.path.join(fdr20_folder, f.name), "wb") as out_file:
+                        out_file.write(f.getbuffer())
+                    saved_count += 1
+
+            # FDR 50% files
+            if training_50_files:
+                fdr50_folder = os.path.join(base_path, "short_gradient", "FDR_50")
+                os.makedirs(fdr50_folder, exist_ok=True)
+                available_fdr.append("50")
+                for f in training_50_files:
+                    with open(os.path.join(fdr50_folder, f.name), "wb") as out_file:
+                        out_file.write(f.getbuffer())
+                    saved_count += 1
+
+            # Create dataset_info.json
+            final_description = dataset_description.strip() if dataset_description else f"{dataset_name} proteomics dataset"
+            dataset_info_dict = {
+                "name": dataset_name,
+                "icon": dataset_icon,
+                "description": final_description,
+                "created": datetime.now().isoformat(),
+                "available_fdr_levels": available_fdr,
+                "file_counts": {
+                    "ground_truth": len(ground_truth_files or []),
+                    "baseline": len(baseline_files or []),
+                    "training_fdr20": len(training_20_files or []),
+                    "training_fdr50": len(training_50_files or [])
+                }
+            }
+
+            with open(os.path.join(base_path, "dataset_info.json"), 'w') as f:
+                json.dump(dataset_info_dict, f, indent=2)
+
+            # Store success and clear cache
+            st.session_state['dataset_just_added'] = dataset_name
+            st.session_state['dataset_add_success'] = {
+                'name': dataset_name,
+                'files': saved_count,
+                'fdr_levels': available_fdr
+            }
+            discover_available_files.clear()
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"Error creating dataset: {str(e)}")
+            return False
+
+    return False
+
+
+def show_delete_dataset_interface():
+    """Display interface for deleting datasets with confirmation."""
+    import shutil
+
+    # Show success message if dataset was just deleted
+    if 'dataset_delete_success' in st.session_state:
+        deleted_name = st.session_state.pop('dataset_delete_success')
+        st.success(f"✅ Dataset '{deleted_name}' has been deleted.")
+
+    st.markdown("### 🗑️ Delete Dataset")
+
+    # Get list of existing datasets
+    data_dir = "data"
+    if not os.path.exists(data_dir):
+        st.info("No datasets found.")
+        return
+
+    dataset_dirs = [d for d in os.listdir(data_dir)
+                    if os.path.isdir(os.path.join(data_dir, d)) and not d.startswith('.')]
+
+    if not dataset_dirs:
+        st.info("No datasets found.")
+        return
+
+    selected_dataset = st.selectbox(
+        "Select dataset to delete:",
+        options=[""] + sorted(dataset_dirs),
+        format_func=lambda x: "Choose a dataset..." if x == "" else x,
+        key="delete_dataset_select"
+    )
+
+    if selected_dataset:
+        dataset_path = os.path.join(data_dir, selected_dataset)
+
+        # Load dataset info
+        info_path = os.path.join(dataset_path, "dataset_info.json")
+        icon = "📊"
+        description = "No description"
+        file_count = 0
+
+        if os.path.exists(info_path):
+            try:
+                with open(info_path, 'r') as f:
+                    info = json.load(f)
+                icon = info.get('icon', icon)
+                description = info.get('description', description)
+            except:
+                pass
+
+        # Count files
+        for root, dirs, files in os.walk(dataset_path):
+            file_count += len([f for f in files if f.endswith('.parquet')])
+
+        st.markdown(f"""
+            <div style="border: 2px solid #DC2626; border-radius: 10px; padding: 1rem; margin: 1rem 0; background: #FEF2F2;">
+                <h4 style="color: #DC2626; margin: 0 0 0.5rem 0;">{icon} {selected_dataset}</h4>
+                <p style="color: #6B7280; margin: 0 0 0.5rem 0; font-size: 0.9rem;">{description}</p>
+                <p style="color: #DC2626; margin: 0; font-size: 0.85rem;"><strong>⚠️ {file_count} parquet file(s) will be permanently deleted</strong></p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        confirm_check = st.checkbox(
+            f"Yes, permanently delete '{selected_dataset}' and all its files",
+            key="delete_confirm_check"
+        )
+
+        if st.button("🗑️ Delete Dataset", type="primary", disabled=not confirm_check,
+                    key="delete_dataset_btn"):
+            try:
+                shutil.rmtree(dataset_path)
+                st.session_state['dataset_delete_success'] = selected_dataset
+                discover_available_files.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error deleting dataset: {str(e)}")
+
 
 def show_setup_interface():
     """Display the dataset setup interface with visual ground truth mapping."""
@@ -6546,18 +6860,53 @@ def show_setup_interface():
         st.empty()
     
     st.markdown("---")
-    
+
+    # Custom CSS for bigger, more prominent dataset management buttons
+    st.markdown("""
+        <style>
+        [data-testid="stExpander"] > details > summary {
+            font-size: 1.1rem !important;
+            padding: 1rem 1.25rem !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="column"]:first-child [data-testid="stExpander"] > details {
+            border: 2px solid #22c55e !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
+        }
+        div[data-testid="column"]:last-child [data-testid="stExpander"] > details {
+            border: 2px solid #ef4444 !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Dataset management expanders (side by side)
+    col_add, col_del = st.columns(2)
+
+    with col_add:
+        with st.expander("➕ **Add New Dataset** - Upload parquet files", expanded=False):
+            show_add_dataset_uploader()
+
+    with col_del:
+        with st.expander("🗑️ **Delete Dataset** - Remove existing data", expanded=False):
+            show_delete_dataset_interface()
+
+    st.markdown("---")
+
     # Subtitle
     st.markdown("*Configure ground truth mapping for your datasets visually - no JSON editing required*")
-    
+
     # Discover available files first
     try:
         files_info = discover_available_files_by_dataset()
-        
+
         if not files_info:
-            st.error("No datasets found! Please check your data folder structure.")
+            st.warning("No datasets found yet!")
+            st.info("👆 Click **'Add New Dataset'** above to upload your first dataset.")
             st.markdown("""
-            Expected structure:
+            Or manually place files in this structure:
             ```
             data/
             ├── YourDataset/
@@ -7091,37 +7440,27 @@ def show_setup_interface():
         if "description" not in final_config:
             final_config["description"] = f"{selected_dataset} proteomics analysis"
         
-        # Create consistent column layout for both action sections
-        col1, col2 = st.columns(2, gap="medium")
-        
-        with col1:
-            st.markdown("### 🧪 Test Configuration")
-            st.markdown("Validate your ground truth mapping configuration")
-            
-            # Test button with consistent styling
-            if st.button("Test Ground Truth Matching", type="primary", use_container_width=True):
-                test_ground_truth_matching(selected_dataset, final_config, training_methods)
-        
-        with col2:
-            st.markdown("### 💾 Save Configuration")
-            st.markdown("Save your ground truth mapping for future analysis")
-            
-            # Save button with consistent styling
+        # Save Configuration section (same width as Navigation button below)
+        st.markdown("### 💾 Save Configuration")
+        col_save, col_spacer = st.columns([1, 3])
+
+        with col_save:
+            # Save button with consistent styling (matches Navigation button)
             if st.button("💾 Save Configuration", type="primary", use_container_width=True):
                 try:
                     # Create directory if it doesn't exist
                     os.makedirs(f"data/{selected_dataset}", exist_ok=True)
-                    
+
                     # Save configuration
                     with open(dataset_config_path, 'w') as f:
                         json.dump(final_config, f, indent=2)
-                    
+
                     st.success(f"✅ Configuration saved to `{dataset_config_path}`")
-                    
+
                     # Clear session state for this dataset
                     if f'pattern_rules_{selected_dataset}' in st.session_state:
                         del st.session_state[f'pattern_rules_{selected_dataset}']
-                    
+
                 except Exception as e:
                     st.error(f"❌ Error saving configuration: {e}")
         
@@ -7212,7 +7551,7 @@ def test_ground_truth_matching(dataset_name, config, training_methods):
     # Add footer with version at the bottom of the page
     st.markdown("---")
     st.markdown(
-        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v0.7</div>", 
+        "<div style='text-align: center; color: #666; font-size: 0.8em; margin-top: 50px;'>PeptiDIA v0.8</div>", 
         unsafe_allow_html=True
     )
 
