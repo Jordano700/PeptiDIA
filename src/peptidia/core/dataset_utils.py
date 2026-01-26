@@ -3,7 +3,6 @@
 DATASET UTILITIES MODULE
 ================================================================================
 Shared utilities for dataset configuration and file discovery.
-Separated from streamlit_app.py to avoid circular imports with peptide_validator_api.py
 ================================================================================
 """
 
@@ -423,8 +422,7 @@ def validate_ground_truth_files(method_name: str) -> bool:
                 try:
                     df = pd.read_parquet(file_path)
                     if len(df) == 0:
-                        if not os.environ.get('PEPTIDIA_SILENCE_DATA_WARNINGS'):
-                            print(f"Warning: Empty ground truth file for method {method_name} (sample {sample_id})")
+                        print(f"Info: No ground truth available for method {method_name} (sample {sample_id}) - available in inference/discovery mode only")
                         return False
                 except Exception as e:
                     print(f"Warning: Error reading ground truth file for method {method_name}: {e}")

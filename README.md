@@ -13,7 +13,7 @@ PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectromet
 - 🤖 **AI-powered** - Finds additional peptides at low error rates
 - 🔬 **Easy to use** - Upload data, get results
 
-## Quick Start (3 steps!)
+## Quick Start (3 steps)
 
 📋 **For detailed instructions, see the [full PeptiDIA guide](docs/PEPTIDIA_FULL_GUIDE.md)**
 
@@ -96,7 +96,7 @@ For advanced users, PeptiDIA also provides a command-line interface:
 - 🧭 **Guided navigation** - Step-by-step workflow
 - 🎯 **Better usability** - No command-line complexity
 
-The web interface provides all functionality with a much more intuitive experienc.
+The web interface provides all functionality with a much more intuitive experience.
 
 ## License
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
@@ -113,7 +113,7 @@ BibTeX format:
 ```bibtex
 @software{ortona2025peptidia,
   author = {Ortona, Jordan},
-  title = {PeptiDIA: Machine Learning-Enhanced Peptide Discovery in DIA-NN Data},
+  title = {PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics},
   year = {2025},
   url = {https://github.com/Jordano700/PeptiDIA},
   note = {Software for finding additional peptides in mass spectrometry data using AI}
@@ -123,7 +123,7 @@ BibTeX format:
 ## Need Help?
 
 - 🐛 Report issues on GitHub
-- 💡 Questions? Open an issuef
+- 💡 Questions? Open an issue
 
 ---
 <sub>PeptiDIA v0.7</sub>

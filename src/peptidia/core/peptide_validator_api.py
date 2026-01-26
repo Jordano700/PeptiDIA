@@ -29,7 +29,7 @@ from sklearn.metrics import (
     classification_report,
     precision_recall_curve
 )
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold, StratifiedGroupKFold
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 import os
@@ -158,7 +158,7 @@ class PeptideValidatorAPI:
             'excluded_features': list(self._leakage_guard_columns)
         }
 
-        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
+        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}  # Removed Precursor.Charge (small integer, log unnecessary)
         self.engineer_ratios = [
             ('Ms1.Area', 'Ms2.Area'),
             ('Peak.Height', 'Ms1.Area'),
@@ -271,7 +271,7 @@ class PeptideValidatorAPI:
                 os.makedirs(f"{results_dir}/{subdir}", exist_ok=True)
             
             # Progress tracking
-            total_steps = 10  # Updated to include model saving and metadata update steps
+            total_steps = 11  # Updated to include OOF threshold calibration step
             current_step = 0
             
             def update_progress(step_name: str):
@@ -311,21 +311,78 @@ class PeptideValidatorAPI:
             naive_results = self._calculate_naive_fdr_comparison(
                 test_method, test_fdr, baseline_peptides, ground_truth_peptides)
             
-            # Step 6: Train model
+            # Step 6: Train final model on ALL training data and calibrate thresholds using 3-fold CV
+            from sklearn.model_selection import StratifiedKFold
+
+            # Step 6.1: Train final model on ALL training data
             if model_type == "Legacy Ensemble":
-                update_progress("Training legacy ensemble model with advanced features")
+                update_progress("Training legacy ensemble model on all training data")
             else:
-                update_progress("Training K-sweep winning XGBoost model with advanced features")
+                update_progress("Training XGBoost model on all training data")
+
             model, training_features = self._train_model(train_data, y_train, model_type)
-            
+
             # Step 6.5: Save trained model automatically (user-friendly)
             update_progress("Saving trained model")
             self._save_trained_model(model, training_features, results_dir)
+
+            # Step 6.6: Calibrate thresholds using 3-fold CV on training data
+            update_progress("Calibrating thresholds using 3-fold cross-validation")
+            print(f"\n🎯 THRESHOLD CALIBRATION WITH 3-FOLD CROSS-VALIDATION")
+            print(f"  Training data: {len(train_data):,} samples")
+
+            # Use 3-fold CV to get unbiased threshold estimates
+            n_folds = 3
+            skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+
+            # Store threshold estimates from each fold
+            fold_thresholds = {fdr: [] for fdr in target_fdr_levels}
+
+            for fold_idx, (train_idx, calib_idx) in enumerate(skf.split(train_data, y_train)):
+                print(f"\n  Fold {fold_idx + 1}/{n_folds}:")
+
+                # Split data for this fold
+                train_fold_data = train_data.iloc[train_idx]
+                calib_fold_data = train_data.iloc[calib_idx]
+                train_fold_labels = y_train.iloc[train_idx]
+                calib_fold_labels = y_train.iloc[calib_idx]
+
+                print(f"    Training: {len(train_fold_data):,} samples")
+                print(f"    Calibration: {len(calib_fold_data):,} samples")
+
+                # Train model on this fold's training data
+                fold_model, _ = self._train_model(train_fold_data, train_fold_labels, model_type)
+
+                # Get predictions on this fold's calibration data
+                X_calib_fold = self._make_advanced_features(calib_fold_data, training_features)
+                calib_fold_predictions = fold_model.predict_proba(X_calib_fold)[:, 1]
+
+                # Calibrate thresholds on this fold
+                fold_calibrated_thresholds = self._calibrate_thresholds_from_oof(
+                    calib_fold_data, calib_fold_predictions, calib_fold_labels.values,
+                    target_fdr_levels, aggregation_method
+                )
+
+                # Store thresholds from this fold
+                for fdr, thresh in fold_calibrated_thresholds.items():
+                    fold_thresholds[fdr].append(thresh)
+
+            # Average thresholds across all folds
+            print(f"\n📊 AVERAGING THRESHOLDS ACROSS {n_folds} FOLDS:")
+            calibrated_thresholds = {}
+            for fdr in sorted(target_fdr_levels):
+                thresholds_for_fdr = fold_thresholds[fdr]
+                avg_threshold = np.mean(thresholds_for_fdr)
+                std_threshold = np.std(thresholds_for_fdr)
+                calibrated_thresholds[fdr] = avg_threshold
+                print(f"  {fdr}% FDR: {avg_threshold:.4f} (±{std_threshold:.4f} std across folds)")
+                print(f"    Individual folds: {', '.join([f'{t:.4f}' for t in thresholds_for_fdr])}")
             
-            # Step 7: Make predictions and optimize thresholds
-            update_progress("Making predictions and optimizing thresholds")
+            # Step 7: Make predictions and apply calibrated thresholds
+            update_progress("Making predictions and applying calibrated thresholds")
             results, X_test = self._validate_and_optimize(
-                model, test_data, y_test, training_features, target_fdr_levels, len(baseline_peptides), aggregation_method)
+                model, test_data, y_test, training_features, target_fdr_levels, 
+                len(baseline_peptides), aggregation_method, fixed_thresholds=calibrated_thresholds)
             
             # Step 7.5: Update model metadata with training results for inference
             update_progress("Updating model with training results")
@@ -360,7 +417,10 @@ class PeptideValidatorAPI:
                     'ground_truth_peptides': len(ground_truth_peptides),
                     'missed_peptides': len(missed_peptides),
                     'additional_candidates': len(additional_peptides),
-                    'training_samples': len(train_data),
+                    'training_samples_total': len(train_data),
+                    'training_samples_model': len(train_data),  # Now uses all training data
+                    'calibration_samples': len(train_data) // 3,  # Each fold uses 1/3 for calibration
+                    'calibration_method': '3-fold CV',
                     'test_samples': len(test_data),
                     'unique_test_peptides': test_data['Modified.Sequence'].nunique(),
                     'aggregation_method': aggregation_method,
@@ -1043,6 +1103,131 @@ class PeptideValidatorAPI:
         else:
             return obj
     
+    def _get_oof_predictions_kfold(self, X: np.ndarray, y: np.ndarray, n_folds: int = 5, groups: Optional[np.ndarray] = None) -> np.ndarray:
+        """Generate out-of-fold predictions using K-fold cross-validation.
+        
+        Each sample gets a prediction from a model that NEVER saw that sample.
+        This is the rigorous way to calibrate thresholds without data leakage.
+        
+        Args:
+            X: Feature array (n_samples, n_features)
+            y: Label array (n_samples,)
+            n_folds: Number of CV folds
+            groups: Optional group labels (e.g. peptide sequences) for GroupKFold
+            
+        Returns:
+            Array of OOF predictions (n_samples,)
+        """
+        oof_predictions = np.zeros(len(y))
+        
+        # Handle small datasets - reduce folds if needed
+        unique_classes = np.unique(y)
+        min_class_count = min(np.sum(y == c) for c in unique_classes)
+        actual_folds = min(n_folds, min_class_count)
+        
+        if actual_folds < 2:
+            # Too few samples for CV - use simple split
+            print(f"  Warning: Too few samples for K-fold CV, using simple split")
+            split_idx = len(y) // 2
+            model = XGBClassifier(**self.optimal_params, use_label_encoder=False, eval_metric='logloss')
+            model.fit(X[:split_idx], y[:split_idx])
+            oof_predictions[split_idx:] = model.predict_proba(X[split_idx:])[:, 1]
+            model.fit(X[split_idx:], y[split_idx:])
+            oof_predictions[:split_idx] = model.predict_proba(X[:split_idx])[:, 1]
+            return oof_predictions
+        
+        if groups is not None:
+            print(f"  Generating OOF predictions with {actual_folds}-fold StratifiedGroupKFold (Grooups: Peptides)...")
+            cv = StratifiedGroupKFold(n_splits=actual_folds, shuffle=True, random_state=42)
+            splitter = cv.split(X, y, groups)
+        else:
+            print(f"  Generating OOF predictions with {actual_folds}-fold StratifiedKFold...")
+            cv = StratifiedKFold(n_splits=actual_folds, shuffle=True, random_state=42)
+            splitter = cv.split(X, y)
+        
+        for fold_idx, (train_idx, val_idx) in enumerate(splitter):
+            X_train_fold = X[train_idx]
+            y_train_fold = y[train_idx]
+            X_val_fold = X[val_idx]
+            
+            # Train XGBoost on this fold using same params as main model
+            model = XGBClassifier(**self.optimal_params, use_label_encoder=False, eval_metric='logloss')
+            model.fit(X_train_fold, y_train_fold)
+            
+            # Predict on validation fold (out-of-fold predictions)
+            oof_predictions[val_idx] = model.predict_proba(X_val_fold)[:, 1]
+            print(f"    Fold {fold_idx + 1}/{actual_folds}: train={len(train_idx)}, val={len(val_idx)}")
+        
+        return oof_predictions
+    
+    def _calibrate_thresholds_from_oof(self, train_data: pd.DataFrame, oof_predictions: np.ndarray,
+                                        y_train: np.ndarray, target_fdr_levels: List[float],
+                                        aggregation_method: str = 'max') -> Dict[float, float]:
+        """Calibrate FDR thresholds using model predictions on training data.
+
+        Thresholds are determined on training data (not test), ensuring test data
+        remains held out. Uses predictions from the same model that will be applied
+        to test data for consistent probability distributions.
+
+        Args:
+            train_data: Training DataFrame with 'Stripped.Sequence' or 'Modified.Sequence'
+            oof_predictions: Predictions array from the trained model on training data
+            y_train: Training labels
+            target_fdr_levels: List of target FDR percentages
+            aggregation_method: How to aggregate predictions per peptide ('max', 'mean')
+
+        Returns:
+            Dict mapping target_fdr -> threshold
+        """
+        print(f"\n🎯 CALIBRATING THRESHOLDS FROM TRAINING DATA PREDICTIONS")
+        
+        # Create DataFrame for aggregation
+        train_copy = train_data.copy()
+        train_copy['oof_prediction'] = oof_predictions
+        train_copy['is_true'] = y_train
+        
+        # Determine peptide column
+        pep_col = 'Stripped.Sequence' if 'Stripped.Sequence' in train_copy.columns else 'Modified.Sequence'
+        
+        # Aggregate to peptide level
+        if aggregation_method == 'mean':
+            agg_func = 'mean'
+        else:
+            agg_func = 'max'
+            
+        oof_peptide_preds = train_copy.groupby(pep_col).agg({
+            'oof_prediction': agg_func,
+            'is_true': 'first'
+        }).reset_index()
+        
+        peptide_predictions = oof_peptide_preds['oof_prediction'].values
+        peptide_labels = oof_peptide_preds['is_true'].values.astype(bool)
+        
+        print(f"  Predictions for {len(peptide_predictions):,} unique peptides")
+        print(f"  True positives: {peptide_labels.sum():,}")
+
+        # Find thresholds for each target FDR
+        thresholds = {}
+        last_threshold = None
+        last_tp = 0
+
+        for target_fdr in sorted(target_fdr_levels):
+            threshold, peptides, actual_fdr = self._find_optimal_threshold(
+                pd.Series(peptide_labels), peptide_predictions, target_fdr,
+                previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
+            )
+
+            if threshold is not None:
+                thresholds[target_fdr] = threshold
+                last_threshold = threshold if last_threshold is None else min(last_threshold, threshold)
+                last_tp = max(last_tp, peptides)
+                print(f"    {target_fdr}% FDR -> threshold = {threshold:.4f} (Training FDR: {actual_fdr:.1f}%)")
+            else:
+                thresholds[target_fdr] = 0.5  # Fallback
+                print(f"    {target_fdr}% FDR -> threshold = 0.5 (fallback)")
+        
+        return thresholds
+    
     def _find_optimal_threshold(self, y_true: pd.Series, y_scores: np.ndarray, target_fdr: float,
                                 previous_threshold: Optional[float] = None,
                                 previous_tp: Optional[int] = None,
@@ -1128,18 +1313,25 @@ class PeptideValidatorAPI:
                 return previous_threshold, tp, actual_fdr
             return None, 0, float('inf')
 
-        # Select candidate closest to target FDR
-        def candidate_key(c):
-            thr, tp, fp, fdr = c
-            return (abs(fdr - target_fdr), -tp, -thr)  # prefer closer FDR, then more TP, then higher thr
+        # Improved FDR Alignment Logic:
+        # Pick threshold that minimizes |Actual_FDR - Target_FDR|
+        # This provides better alignment between OOF calibration and test performance
 
-        best_thr, best_tp, best_fp, best_fdr = min(candidates, key=candidate_key)
+        # c = (thr, tp, fp, fdr)
+        # Find candidate closest to target FDR
+        def fdr_distance(c):
+            """Distance from target FDR, with tie-breaker on higher TP for yield"""
+            fdr_error = abs(c[3] - target_fdr)
+            tp_penalty = -c[1] / 1e6  # Tiny penalty to prefer higher TP when FDR error is equal
+            return fdr_error + tp_penalty
+
+        best_thr, best_tp, best_fp, best_fdr = min(candidates, key=fdr_distance)
 
         # Enforce monotonic TP expansion if requested
         if previous_tp is not None and best_tp < previous_tp:
             feasible = [c for c in candidates if c[1] >= previous_tp]
             if feasible:
-                best_thr, best_tp, best_fp, best_fdr = min(feasible, key=candidate_key)
+                best_thr, best_tp, best_fp, best_fdr = min(feasible, key=fdr_distance)
             else:
                 # No feasible that preserves TP; stick to previous threshold metrics
                 if previous_threshold is not None:
@@ -1223,14 +1415,22 @@ class PeptideValidatorAPI:
 
     def _validate_and_optimize(self, model, test_data: pd.DataFrame, y_test: pd.Series, 
                               training_features: List[str], target_fdr_levels: List[float], 
-                              baseline_count: int, aggregation_method: str = 'max') -> Tuple[List[Dict], pd.DataFrame]:
+                              baseline_count: int, aggregation_method: str = 'max',
+                              fixed_thresholds: Optional[Dict[float, float]] = None) -> Tuple[List[Dict], pd.DataFrame]:
         """
-        Validate additional peptides and optimize thresholds using unique peptides.
+        Validate additional peptides using thresholds from training (OOF) or optimize on test.
         
         This method properly handles duplicate peptides by aggregating predictions
-        at the peptide level before threshold optimization.
+        at the peptide level before applying thresholds.
+        
+        Args:
+            fixed_thresholds: If provided, use these pre-calibrated thresholds instead of
+                             optimizing on test data. Dict mapping target_fdr -> threshold.
         """
-        print(f"\n🔄 VALIDATION AND OPTIMIZATION")
+        if fixed_thresholds:
+            print(f"\n🔄 VALIDATION WITH TRAINING-CALIBRATED THRESHOLDS")
+        else:
+            print(f"\n🔄 VALIDATION AND OPTIMIZATION (on test data)")
         print(f"  Input: {len(test_data):,} rows, {test_data['Modified.Sequence'].nunique():,} unique peptides")
         
         # Create test features (on all rows for training)
@@ -1247,50 +1447,63 @@ class PeptideValidatorAPI:
         
         print(f"  Aggregated to {len(peptide_predictions):,} unique peptide predictions")
         
-        # Now optimize thresholds using unique peptides
+        # Apply thresholds - either fixed or optimized
         results = []
         
         last_threshold = None
         last_tp = 0
         for target_fdr in sorted(target_fdr_levels):
-            threshold, peptides, actual_fdr = self._find_optimal_threshold(
-                peptide_labels, peptide_predictions, target_fdr,
-                previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
-            )
-            # Update monotonic trackers
+            if fixed_thresholds and target_fdr in fixed_thresholds:
+                # Use pre-calibrated threshold from OOF predictions
+                threshold = fixed_thresholds[target_fdr]
+            else:
+                # Fall back to optimizing on test data (legacy behavior)
+                threshold, peptides, actual_fdr = self._find_optimal_threshold(
+                    peptide_labels, peptide_predictions, target_fdr,
+                    previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
+                )
+
             if threshold is not None:
+                # Calculate ALL metrics consistently from the threshold
+                predictions = peptide_predictions >= threshold
+                tp = int((peptide_labels & predictions).sum())
+                fp = int((~peptide_labels & predictions).sum())
+                tn = int((~peptide_labels & ~predictions).sum())
+                fn = int((peptide_labels & ~predictions).sum())
+
+                # Calculate actual FDR from tp and fp
+                actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
+                peptides = tp  # Additional peptides = true positives selected
+
+                # Update monotonic trackers
                 last_threshold = threshold if last_threshold is None else min(last_threshold, threshold)
                 last_tp = max(last_tp, peptides)
-            
-            if threshold is not None:
-                # Calculate metrics on unique peptides
+
+                # Calculate other metrics
                 total_validated = peptide_labels.sum()
                 recovery_pct = peptides / total_validated * 100 if total_validated > 0 else 0
                 increase_pct = peptides / baseline_count * 100 if baseline_count > 0 else 0
-                
-                # Calculate confusion matrix on unique peptides
-                predictions = peptide_predictions >= threshold
-                tp = (peptide_labels & predictions).sum()
-                fp = (~peptide_labels & predictions).sum()
-                tn = (~peptide_labels & ~predictions).sum()
-                fn = (peptide_labels & ~predictions).sum()
-                
+
                 # Calculate MCC on unique peptides
                 mcc = matthews_corrcoef(peptide_labels, predictions)
+                
+                # Indicate whether threshold was from training calibration or optimized on test
+                threshold_source = "training-calibrated" if (fixed_thresholds and target_fdr in fixed_thresholds) else "test-optimized"
                 
                 results.append({
                     'Target_FDR': target_fdr,
                     'Threshold': threshold,
-                    'Additional_Peptides': peptides,  # Now truly unique peptides
+                    'Additional_Peptides': int(tp),  # True positives selected
                     'Actual_FDR': actual_fdr,
                     'Recovery_Pct': recovery_pct,
                     'Increase_Pct': increase_pct,
-                    'False_Positives': fp,
-                    'Total_Validated_Candidates': total_validated,
-                    'MCC': mcc
+                    'False_Positives': int(fp),
+                    'Total_Validated_Candidates': int(total_validated),
+                    'MCC': mcc,
+                    'Threshold_Source': threshold_source
                 })
                 
-                print(f"    Target {target_fdr:4.1f}%: {peptides:,} peptides, {actual_fdr:.1f}% FDR, {recovery_pct:.1f}% recovery")
+                print(f"    Target {target_fdr:4.1f}%: {tp:,} peptides, {actual_fdr:.1f}% FDR, {recovery_pct:.1f}% recovery ({threshold_source})")
         
         return results, X_test
     
@@ -1949,7 +2162,9 @@ Analysis completed: {analysis_results['metadata']['analysis_timestamp']}
 📊 DATA SUMMARY:
 Baseline peptides: {analysis_results['summary']['baseline_peptides']:,}
 Ground truth peptides: {analysis_results['summary']['ground_truth_peptides']:,}
-Training samples: {analysis_results['summary']['training_samples']:,}
+Training samples: {analysis_results['summary']['training_samples_total']:,}
+  - Model trained on: {analysis_results['summary']['training_samples_model']:,} (all training data)
+  - Threshold calibration: {analysis_results['summary']['calibration_method']} (~{analysis_results['summary']['calibration_samples']:,} per fold)
 Test samples: {analysis_results['summary']['test_samples']:,}
 
 ⚙️ CONFIGURATION:
@@ -2019,7 +2234,7 @@ def run_peptide_validation(train_methods: List[str],
 # Added from flexible_peptide_validator.py to make the project self-contained
 
 # 🎨 ADVANCED FEATURE ENGINEERING CONSTANTS
-ENGINEER_LOG = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Charge'}
+ENGINEER_LOG = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}  # Removed Precursor.Charge
 ENGINEER_RATIOS = [
     ('Ms1.Area', 'Ms2.Area'),
     ('Peak.Height', 'Ms1.Area'),

@@ -767,9 +767,8 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     mask = full_df[seq_col_full].astype(str).isin(combined_peptides)
     filtered_df = full_df.loc[mask].copy()
 
-    # Indicator columns
+    # Indicator column: Is_ML = True for ML-discovered peptides, False for baseline
     try:
-        filtered_df['Is_Baseline'] = filtered_df[seq_col_full].astype(str).isin(set(map(str, baseline_peptides)))
         filtered_df['Is_ML'] = filtered_df[seq_col_full].astype(str).isin(set(map(str, selected_additional)))
     except Exception:
         pass
@@ -827,7 +826,8 @@ def display_diann_filtered_export(results):
                 rows.append((f"feature_selection.{k}", v))
         for k in [
             "baseline_peptides", "ground_truth_peptides", "additional_candidates", "validated_candidates",
-            "test_samples", "training_samples", "unique_test_peptides", "missed_peptides", "runtime_minutes"
+            "test_samples", "training_samples_total", "training_samples_model", "calibration_samples",
+            "unique_test_peptides", "missed_peptides", "runtime_minutes"
         ]:
             if k in summ:
                 rows.append((f"summary.{k}", summ[k]))
@@ -849,10 +849,8 @@ def display_diann_filtered_export(results):
             import pandas as _pd
             tfdr = float(selection)
             filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
-            if 'Is_Baseline' not in filtered_df.columns:
-                filtered_df['Is_Baseline'] = False
             if 'Is_ML' not in filtered_df.columns:
-                filtered_df['Is_ML'] = ~filtered_df['Is_Baseline']
+                filtered_df['Is_ML'] = False
             buffer = io.BytesIO()
             try:
                 with _pd.ExcelWriter(buffer, engine="openpyxl") as writer:
@@ -1630,7 +1628,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <div class="main-title">PeptiDIA</div>
-        <div class="main-subtitle">Professional Machine Learning Interface for DIA-NN Peptide Analysis</div>
+        <div class="main-subtitle">Professional Machine Learning Interface for Enhanced DIA-NN Peptide Identification</div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -2025,22 +2023,8 @@ def show_training_interface():
         help="FDR levels to optimize for in results (select more for broader analysis)"
     )
     
-    # Model Type Selection
-    st.sidebar.markdown("### 🤖 Model Type")
-    model_type = st.sidebar.selectbox(
-        "Choose Model Type",
-        options=["K-Sweep XGBoost", "Legacy Ensemble"],
-        index=0,
-        help="K-Sweep XGBoost: Proven winning configuration from systematic comparison\nLegacy Ensemble: Previous XGBoost+RandomForest+LogisticRegression model"
-    )
-    
-    # Show model info
-    if model_type == "K-Sweep XGBoost":
-        st.sidebar.success("🏆 Using K-sweep winning XGBoost configuration")
-        st.sidebar.markdown("*Proven superior performance in systematic tests*")
-    else:
-        st.sidebar.info("🔄 Using legacy ensemble model for comparison")
-        st.sidebar.markdown("*XGBoost + Random Forest + Logistic Regression*")
+    # Model Type - K-Sweep XGBoost is the only model (proven best performance)
+    model_type = "K-Sweep XGBoost"
     
     # Advanced parameters
     with st.sidebar.expander("🔧 Model Parameters"):
@@ -2079,9 +2063,8 @@ def show_training_interface():
             reg_lambda = st.slider("L2 Regularization (Lambda)", 0.5, 10.0, 1.5, 0.1,
                                   help="K-sweep winner: 1.5. L2 regularization term on weights.")
             
-            st.markdown("#### **Other Parameters**")
-            random_state = st.number_input("Random State", value=9649, min_value=0, max_value=99999, step=1,
-                                         help="K-sweep winner: 9649. Random seed for reproducible results")
+            # Use K-sweep winning defaults (no UI needed)
+            random_state = 9649
         else:
             # Set default legacy values for ensemble
             colsample_bytree = 0.8
@@ -2091,25 +2074,9 @@ def show_training_interface():
             reg_lambda = 1.5
             random_state = 42
 
-        st.markdown("#### **Calibration**")
-        calibration_display = st.selectbox(
-            "Calibration Method",
-            options=["Isotonic (default)", "Sigmoid (Platt)"],
-            index=0,
-            help="Choose probability calibration: Isotonic (non-parametric, monotonic) or Sigmoid (Platt scaling)."
-        )
-        calibration_method = 'isotonic' if calibration_display.startswith('Isotonic') else 'sigmoid'
-
-        st.markdown("#### **Peptide Aggregation**")
-        agg_display = st.selectbox(
-            "Aggregation Method",
-            options=["Max (best row)", "Mean across rows", "Weighted by Peak.Height"],
-            index=0,
-            help="How to combine multiple rows per peptide into one score before thresholding."
-        )
-        aggregation_method = (
-            'max' if agg_display.startswith('Max') else ('mean' if agg_display.startswith('Mean') else 'weighted')
-        )
+        # Use optimal defaults (no UI needed)
+        calibration_method = 'isotonic'
+        aggregation_method = 'max'
     
     # Feature selection
     with st.sidebar.expander("🎯 Feature Selection"):
@@ -2661,7 +2628,9 @@ def extract_summary_metrics(results_data):
         'ground_truth_peptides': ground_truth_peptides,
         'missed_peptides': missed_peptides,
         'additional_candidates': additional_candidates,
-        'training_samples': results_data['summary']['training_samples'],
+        'training_samples': results_data['summary']['training_samples_total'],
+        'training_samples_model': results_data['summary']['training_samples_model'],
+        'calibration_samples': results_data['summary']['calibration_samples'],
         'test_samples': results_data['summary']['test_samples'],
         'max_possible_recovery': missed_peptides,
         'recovery_efficiency': (int(best_result['Additional_Peptides']) / missed_peptides * 100) if missed_peptides > 0 else 0
@@ -3764,39 +3733,62 @@ def display_export_options(results, include_general_exports: bool = True):
         or (results.get('config', {}) or {}).get('model_source') == 'inference'
     )
 
+    # Check if this is batch mode
+    is_batch_mode = (
+        (results.get('summary', {}) or {}).get('batch_mode')
+        or (results.get('config', {}) or {}).get('batch_mode')
+    )
+
+    # Unified Filtered Results Export (works for both batch and single-method inference)
     if is_inference_mode:
-        st.markdown("### 🧪 DIA-NN Filtered Export")
+        st.markdown("### 🧪 Filtered Results Export")
+        if is_batch_mode:
+            st.info("Export filtered results from all methods. Results include a **Source Method** column for easy filtering.")
+
         try:
-            # Always export a clean CSV that matches the Excel 'Filtered Results' sheet
-            brand_diann = False
+            import io
+            import pandas as _pd
+
+            # Format selection
             export_format = st.radio(
                 "Format",
                 ["CSV (.csv)", "Excel (.xlsx)"],
                 index=0,
                 horizontal=True,
-                help="Excel export contains two sheets: Results and Summary",
-                key="diann_export_format"
+                help="Excel export contains multiple sheets with results and summary",
+                key="filtered_export_format"
             )
 
+            # Get available target FDR levels
             targets = []
             if 'results' in results and results['results']:
                 try:
                     targets = sorted({float(r.get('Target_FDR')) for r in results['results']})
                 except Exception:
                     targets = []
-            # Single-FDR CSV export: let user pick exactly one FDR
+
+            # Find default index for 1.0 FDR (or closest)
+            default_idx = 0
+            target_strs = [f"{t:.1f}" for t in targets]
+            if "1.0" in target_strs:
+                default_idx = target_strs.index("1.0")
+
+            # Target FDR selector
             selection = st.selectbox(
-                "Target FDR for DIA-NN export",
-                [f"{t:.1f}" for t in targets],
-                help="Choose the FDR for ML-selected peptides",
-                key="diann_export_fdr"
+                "Target FDR for export",
+                target_strs,
+                index=default_idx,
+                help="Choose the FDR level for filtered peptides",
+                key="filtered_export_fdr"
             )
 
+            tfdr = float(selection)
+
+            # Build metadata for summary sheet
             def _build_metadata_df():
                 rows = []
                 cfg = results.get('config', {})
                 summ = results.get('summary', {})
-                # Clean, human‑readable timestamp
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 rows.extend([
                     ("PeptiDIA", "v0.7"),
@@ -3807,6 +3799,9 @@ def display_export_options(results, include_general_exports: bool = True):
                     ("Test FDR", cfg.get('test_fdr')),
                     ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
                 ])
+                if is_batch_mode:
+                    rows.append(("Batch Mode", "Yes"))
+                    rows.append(("Methods Processed", summ.get('methods_processed', 'N/A')))
                 # Hyperparameters
                 xgb = cfg.get('xgb_params', {}) or {}
                 for k in ["learning_rate", "max_depth", "n_estimators", "subsample", "colsample_bytree"]:
@@ -3817,221 +3812,326 @@ def display_export_options(results, include_general_exports: bool = True):
                 for k, v in fs.items():
                     if isinstance(v, (str, int, float, bool)):
                         rows.append((f"feature_selection.{k}", v))
-                # Minimal summary only
+                # Summary info
                 if 'baseline_peptides' in summ:
                     rows.append(("Baseline Peptides", summ['baseline_peptides']))
                 if 'additional_candidates' in summ:
                     rows.append(("Additional Candidates", summ['additional_candidates']))
-                import pandas as _pd
                 return _pd.DataFrame(rows, columns=["Key", "Value"])
 
-            try:
-                tfdr = float(selection)
-                filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
+            # BATCH MODE: Export peptide-level data with Source_Method column for filtering
+            if is_batch_mode:
+                try:
+                    # Build combined filtered DataFrame from all methods
+                    test_methods = results.get('config', {}).get('test_methods', [])
+                    if not test_methods:
+                        # Fallback: extract from results
+                        test_methods = list(set(r.get('Source_Method', '') for r in results.get('results', []) if r.get('Source_Method')))
 
-                if export_format == "Excel (.xlsx)":
-                    try:
-                        import io
-                        import pandas as _pd
-                        buffer = io.BytesIO()
-
-                        # Build metadata and per-FDR results tables
-                        meta_df = _build_metadata_df()
-                        # Build FDR results table similar to results section/CLI
-                        fdr_df = _pd.DataFrame(results.get('results', [])) if results.get('results') else _pd.DataFrame()
-                        if not fdr_df.empty:
-                            # Ensure consistent ordering and friendly column names
-                            rename_map = {
-                                'Target_FDR': 'Target FDR (%)',
-                                'Threshold': 'Threshold',
-                                'Additional_Peptides': 'Additional Peptides',
-                                'False_Positives': 'False Positives',
-                                'Actual_FDR': 'Actual FDR (%)',
-                                'Precision': 'Precision',
-                                'Recovery_Pct': 'Recovery %',
-                                'Increase_Pct': 'Increase %',
-                                'MCC': 'MCC',
-                                'Total_Validated_Candidates': 'Validated Candidates',
-                            }
-                            cols = [c for c in rename_map.keys() if c in fdr_df.columns]
-                            fdr_df = fdr_df[cols].rename(columns=rename_map)
-                            # Sort by Target FDR if present
-                            if 'Target FDR (%)' in fdr_df.columns:
-                                # Avoid deprecated use_inf_as_na: explicitly replace inf with NaN
-                                col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
-                                try:
-                                    import numpy as _np
-                                    col = col.replace([_np.inf, -_np.inf], _np.nan)
-                                except Exception:
-                                    pass
-                                fdr_df['Target FDR (%)'] = col
-                                fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
-
-                        # Choose an available Excel engine (prefer xlsxwriter for formatting & images)
-                        engine = None
+                    combined_dfs = []
+                    for method in test_methods:
                         try:
-                            import xlsxwriter  # noqa: F401
-                            engine = 'xlsxwriter'
-                        except Exception:
+                            # Create a single-method results dict for build_filtered_diann_dataframe
+                            single_method_results = {
+                                'config': {**results.get('config', {}), 'test_method': method},
+                                'summary': results.get('summary', {}),
+                                'results': [r for r in results.get('results', []) if r.get('Source_Method') == method],
+                                'trained_model': results.get('trained_model'),
+                                'feature_names': results.get('feature_names'),
+                                'selected_sequences_by_fdr': results.get('selected_sequences_by_method_fdr', {}).get(method, {})
+                            }
+                            method_df = build_filtered_diann_dataframe(single_method_results, target_fdr=tfdr)
+                            method_df.insert(0, 'Source_Method', method)
+                            combined_dfs.append(method_df)
+                        except Exception as method_err:
+                            st.warning(f"Could not build filtered data for {method}: {str(method_err)}")
+                            continue
+
+                    if combined_dfs:
+                        filtered_df = _pd.concat(combined_dfs, ignore_index=True)
+
+                        if export_format == "Excel (.xlsx)":
                             try:
-                                import openpyxl  # noqa: F401
-                                engine = 'openpyxl'
-                            except Exception:
-                                engine = None
+                                buffer = io.BytesIO()
+                                meta_df = _build_metadata_df()
+                                fdr_df = _pd.DataFrame(results.get('results', [])) if results.get('results') else _pd.DataFrame()
 
-                        if not engine:
-                            raise RuntimeError("No Excel writer engine available (install openpyxl or xlsxwriter)")
-
-                        with _pd.ExcelWriter(buffer, engine=engine) as writer:
-                            # Sheet 1: filtered results
-                            filtered_df.to_excel(writer, index=False, sheet_name="Filtered Results")
-
-                            # Sheet 2: metadata + FDR results stacked with spacing
-                            sheet_name = "Export Summary"
-                            # Leave space for title/logo
-                            start_row = 5  # header at row 6 in Excel (0-based index)
-                            if not meta_df.empty:
-                                meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
-                                start_row = start_row + len(meta_df) + 3
-                            if not fdr_df.empty:
-                                fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
-
-                            # Resolve logo path (prefer explicit user path, then repo assets)
-                            logo_path = None
-                            try:
-                                candidate_paths = [
-                                    '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
-                                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
-                                ]
-                                for _p in candidate_paths:
-                                    if os.path.exists(_p):
-                                        logo_path = _p
-                                        break
-                            except Exception:
-                                logo_path = None
-
-                            # Optional styling and logo when using xlsxwriter
-                            if engine == 'xlsxwriter':
-                                wb = writer.book
-                                ws_results = writer.sheets.get('Filtered Results')
-                                ws_summary = writer.sheets.get(sheet_name)
-                                # Formats (keep colors consistent & minimal)
-                                header_fmt = wb.add_format({
-                                    'bold': True,
-                                    'bg_color': '#E6F2FA',
-                                    'border': 1,
-                                    'align': 'center',
-                                    'valign': 'vcenter',
-                                    'pattern': 1  # ensure background color is applied
-                                })
-                                # Keep a title format in case we reintroduce a title later
-                                title_fmt = wb.add_format({'bold': True, 'font_size': 16})
-                                key_fmt = wb.add_format({'bold': True})
-                                # Place logo in top-left (A1..A5 area), no title text
-                                try:
-                                    if logo_path and os.path.exists(logo_path):
-                                        ws_summary.insert_image('A1', logo_path, {
-                                            'x_scale': 0.11,
-                                            'y_scale': 0.11,
-                                            'x_offset': 0,
-                                            'y_offset': 0,
-                                            'object_position': 2  # move but don't size with cells
-                                        })
-                                except Exception:
-                                    pass
-                                # Apply header formatting precisely to used cells only (avoid coloring whole rows)
-                                # Meta table headers at row 5 (0-based)
-                                if not meta_df.empty:
-                                    ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
-                                    ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
-                                    # Column widths
-                                    ws_summary.set_column(0, 0, 28, key_fmt)
-                                    # Wrap text in Value column so it won't overflow under the logo
-                                    wrap_fmt = wb.add_format({'text_wrap': True})
-                                    ws_summary.set_column(1, 1, 70, wrap_fmt)
-                                    # Block overflow from column B into C/D by placing spaces in C/D
-                                    # Data rows begin at Excel row 7 (0-based index 6)
-                                    for r in range(6, 6 + len(meta_df)):
-                                        ws_summary.write(r, 2, ' ')
-                                        ws_summary.write(r, 3, ' ')
-                                # FDR table headers start at 'start_row'
                                 if not fdr_df.empty:
-                                    for c_idx, c_name in enumerate(list(fdr_df.columns)):
-                                        ws_summary.write(start_row, c_idx, str(c_name), header_fmt)
-                                    # Set appropriate widths for each column based on content
-                                    for c_idx, c_name in enumerate(list(fdr_df.columns)):
-                                        if 'Validated Candidates' in str(c_name):
-                                            ws_summary.set_column(c_idx, c_idx, 22)
-                                        elif 'Additional Peptides' in str(c_name):
-                                            ws_summary.set_column(c_idx, c_idx, 20)
-                                        elif 'False Positives' in str(c_name):
-                                            ws_summary.set_column(c_idx, c_idx, 18)
-                                        elif 'Target FDR' in str(c_name) or 'Actual FDR' in str(c_name):
-                                            ws_summary.set_column(c_idx, c_idx, 16)
-                                        else:
-                                            ws_summary.set_column(c_idx, c_idx, 14)
-                                # Results sheet headers & widths
-                                if ws_results and not filtered_df.empty:
-                                    # Rewrite header cells with format to guarantee styling
-                                    for c_idx, c_name in enumerate(list(filtered_df.columns)):
-                                        ws_results.write(0, c_idx, str(c_name), header_fmt)
-                                    ws_results.set_column(0, max(0, len(filtered_df.columns) - 1), 14)
-                            elif engine == 'openpyxl':
-                                # Insert logo using openpyxl if available
+                                    # Check if this is discovery mode (no ground truth)
+                                    is_discovery = (results.get('summary', {}) or {}).get('ground_truth_peptides', 1) == 0
+                                    
+                                    if is_discovery:
+                                        # Discovery mode: minimal columns (no FDR validation possible)
+                                        rename_map = {
+                                            'Source_Method': 'Source Method',
+                                            'Target_FDR': 'Target FDR (%)',
+                                            'Threshold': 'Threshold',
+                                            'Additional_Peptides': 'Discovered Peptides',
+                                            'Increase_Pct': 'Increase %',
+                                        }
+                                    else:
+                                        # Validation mode: full columns with performance metrics
+                                        rename_map = {
+                                            'Source_Method': 'Source Method',
+                                            'Target_FDR': 'Target FDR (%)',
+                                            'Threshold': 'Threshold',
+                                            'Additional_Peptides': 'Additional Peptides',
+                                            'False_Positives': 'False Positives',
+                                            'Actual_FDR': 'Actual FDR (%)',
+                                            'Precision': 'Precision',
+                                            'Recovery_Pct': 'Recovery %',
+                                            'Increase_Pct': 'Increase %',
+                                            'MCC': 'MCC',
+                                        }
+                                    cols = [c for c in rename_map.keys() if c in fdr_df.columns]
+                                    fdr_df = fdr_df[cols].rename(columns=rename_map)
+                                    if 'Target FDR (%)' in fdr_df.columns:
+                                        import numpy as _np
+                                        col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                        col = col.replace([_np.inf, -_np.inf], _np.nan)
+                                        fdr_df['Target FDR (%)'] = col
+                                        fdr_df = fdr_df.sort_values(by=['Source Method', 'Target FDR (%)'], kind='mergesort')
+
+                                engine = None
                                 try:
-                                    from openpyxl.drawing.image import Image as XLImage
-                                    from openpyxl.styles import Alignment
-                                    ws_summary = writer.sheets.get(sheet_name)
-                                    if ws_summary and logo_path and os.path.exists(logo_path):
-                                        img = XLImage(logo_path)
-                                        # Scale image down roughly similar to xlsxwriter scale
+                                    import xlsxwriter
+                                    engine = 'xlsxwriter'
+                                except ImportError:
+                                    try:
+                                        import openpyxl
+                                        engine = 'openpyxl'
+                                    except ImportError:
+                                        engine = None
+
+                                if not engine:
+                                    raise RuntimeError("No Excel writer engine available")
+
+                                with _pd.ExcelWriter(buffer, engine=engine) as writer:
+                                    filtered_df.to_excel(writer, index=False, sheet_name="Filtered Results")
+                                    sheet_name = "Export Summary"
+                                    start_row = 5
+                                    if not meta_df.empty:
+                                        meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+                                        start_row = start_row + len(meta_df) + 3
+                                    if not fdr_df.empty:
+                                        fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+
+                                    # Logo
+                                    logo_path = None
+                                    try:
+                                        candidate_paths = [
+                                            '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
+                                            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
+                                        ]
+                                        for _p in candidate_paths:
+                                            if os.path.exists(_p):
+                                                logo_path = _p
+                                                break
+                                    except Exception:
+                                        logo_path = None
+
+                                    if engine == 'xlsxwriter':
+                                        wb = writer.book
+                                        ws_results = writer.sheets.get('Filtered Results')
+                                        ws_summary = writer.sheets.get(sheet_name)
+                                        header_fmt = wb.add_format({
+                                            'bold': True, 'bg_color': '#E6F2FA', 'border': 1,
+                                            'align': 'center', 'valign': 'vcenter', 'pattern': 1
+                                        })
+                                        key_fmt = wb.add_format({'bold': True})
+                                        wrap_fmt = wb.add_format({'text_wrap': True})
+
                                         try:
-                                            img.width = int(img.width * 0.11)
-                                            img.height = int(img.height * 0.11)
+                                            if logo_path and os.path.exists(logo_path):
+                                                ws_summary.insert_image('A1', logo_path, {
+                                                    'x_scale': 0.11, 'y_scale': 0.11,
+                                                    'x_offset': 0, 'y_offset': 0, 'object_position': 2
+                                                })
                                         except Exception:
                                             pass
-                                        # Anchor logo at A1..A5 area
-                                        ws_summary.add_image(img, 'A1')
 
-                                    # Match key/value column widths and wrap long values
+                                        if not meta_df.empty:
+                                            ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
+                                            ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
+                                        # Set column widths for entire summary sheet (metadata + FDR table)
+                                        ws_summary.set_column(0, 0, 30, key_fmt)  # First column (keys)
+                                        ws_summary.set_column(1, 1, 70, wrap_fmt)  # Second column (values)
+                                        ws_summary.set_column(2, 9, 20)  # Additional columns for FDR table
+
+                                        if ws_results and not filtered_df.empty:
+                                            for c_idx, c_name in enumerate(list(filtered_df.columns)):
+                                                ws_results.write(0, c_idx, str(c_name), header_fmt)
+                                            ws_results.set_column(0, max(0, len(filtered_df.columns) - 1), 20)
+
+                                buffer.seek(0)
+                                st.download_button(
+                                    label=f"⬇️ Save Combined Export (.xlsx)",
+                                    data=buffer.getvalue(),
+                                    file_name=f"diann_batch_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            except Exception as excel_err:
+                                st.info(f"Excel engine not available: {excel_err}")
+                        else:
+                            # CSV export with Source_Method column
+                            csv_data = filtered_df.to_csv(index=False)
+                            st.download_button(
+                                label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                                data=csv_data,
+                                file_name=f"diann_batch_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                mime="text/csv"
+                            )
+                    else:
+                        st.warning("No data available for export. Check that methods have peptide data.")
+
+                except Exception as e:
+                    st.info("Provide trained model and feature list in results to enable DIA-NN export.")
+                    with st.expander("Export details / troubleshooting"):
+                        st.code(str(e))
+
+            # SINGLE METHOD MODE: Use original DIA-NN filtered export (peptide-level data)
+            else:
+                try:
+                    filtered_df = build_filtered_diann_dataframe(results, target_fdr=tfdr)
+
+                    if export_format == "Excel (.xlsx)":
+                        try:
+                            buffer = io.BytesIO()
+                            meta_df = _build_metadata_df()
+                            fdr_df = _pd.DataFrame(results.get('results', [])) if results.get('results') else _pd.DataFrame()
+
+                            if not fdr_df.empty:
+                                # Check if this is discovery mode (no ground truth)
+                                is_discovery = (results.get('summary', {}) or {}).get('ground_truth_peptides', 1) == 0
+                                
+                                if is_discovery:
+                                    # Discovery mode: minimal columns (no FDR validation possible)
+                                    rename_map = {
+                                        'Target_FDR': 'Target FDR (%)',
+                                        'Threshold': 'Threshold',
+                                        'Additional_Peptides': 'Discovered Peptides',
+                                        'Increase_Pct': 'Increase %',
+                                    }
+                                else:
+                                    # Validation mode: full columns with performance metrics
+                                    rename_map = {
+                                        'Target_FDR': 'Target FDR (%)',
+                                        'Threshold': 'Threshold',
+                                        'Additional_Peptides': 'Additional Peptides',
+                                        'False_Positives': 'False Positives',
+                                        'Actual_FDR': 'Actual FDR (%)',
+                                        'Precision': 'Precision',
+                                        'Recovery_Pct': 'Recovery %',
+                                        'Increase_Pct': 'Increase %',
+                                        'MCC': 'MCC',
+                                    }
+                                cols = [c for c in rename_map.keys() if c in fdr_df.columns]
+                                fdr_df = fdr_df[cols].rename(columns=rename_map)
+                                if 'Target FDR (%)' in fdr_df.columns:
+                                    import numpy as _np
+                                    col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                    col = col.replace([_np.inf, -_np.inf], _np.nan)
+                                    fdr_df['Target FDR (%)'] = col
+                                    fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
+
+                            engine = None
+                            try:
+                                import xlsxwriter
+                                engine = 'xlsxwriter'
+                            except ImportError:
+                                try:
+                                    import openpyxl
+                                    engine = 'openpyxl'
+                                except ImportError:
+                                    engine = None
+
+                            if not engine:
+                                raise RuntimeError("No Excel writer engine available")
+
+                            with _pd.ExcelWriter(buffer, engine=engine) as writer:
+                                filtered_df.to_excel(writer, index=False, sheet_name="Filtered Results")
+                                sheet_name = "Export Summary"
+                                start_row = 5
+                                if not meta_df.empty:
+                                    meta_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+                                    start_row = start_row + len(meta_df) + 3
+                                if not fdr_df.empty:
+                                    fdr_df.to_excel(writer, index=False, sheet_name=sheet_name, startrow=start_row)
+
+                                # Logo
+                                logo_path = None
+                                try:
+                                    candidate_paths = [
+                                        '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
+                                        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
+                                    ]
+                                    for _p in candidate_paths:
+                                        if os.path.exists(_p):
+                                            logo_path = _p
+                                            break
+                                except Exception:
+                                    logo_path = None
+
+                                if engine == 'xlsxwriter':
+                                    wb = writer.book
+                                    ws_results = writer.sheets.get('Filtered Results')
+                                    ws_summary = writer.sheets.get(sheet_name)
+                                    header_fmt = wb.add_format({
+                                        'bold': True, 'bg_color': '#E6F2FA', 'border': 1,
+                                        'align': 'center', 'valign': 'vcenter', 'pattern': 1
+                                    })
+                                    key_fmt = wb.add_format({'bold': True})
+                                    wrap_fmt = wb.add_format({'text_wrap': True})
+
                                     try:
-                                        ws_summary.column_dimensions['A'].width = 28
-                                        ws_summary.column_dimensions['B'].width = 70
-                                        # Header in row 6, data from row 7 to row (7 + len(meta_df) - 1)
-                                        for r in range(7, 7 + len(meta_df)):
-                                            cell = ws_summary[f'B{r}']
-                                            cell.alignment = Alignment(wrap_text=True)
-                                            # Block overflow into C/D by writing spaces
-                                            ws_summary[f'C{r}'] = ' '
-                                            ws_summary[f'D{r}'] = ' '
+                                        if logo_path and os.path.exists(logo_path):
+                                            ws_summary.insert_image('A1', logo_path, {
+                                                'x_scale': 0.11, 'y_scale': 0.11,
+                                                'x_offset': 0, 'y_offset': 0, 'object_position': 2
+                                            })
                                     except Exception:
                                         pass
-                                except Exception:
-                                    pass
 
+                                    if not meta_df.empty:
+                                        ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
+                                        ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
+                                    # Set column widths for entire summary sheet (metadata + FDR table)
+                                    ws_summary.set_column(0, 0, 30, key_fmt)  # First column (keys)
+                                    ws_summary.set_column(1, 1, 70, wrap_fmt)  # Second column (values)
+                                    ws_summary.set_column(2, 9, 20)  # Additional columns for FDR table
+
+                                    if ws_results and not filtered_df.empty:
+                                        for c_idx, c_name in enumerate(list(filtered_df.columns)):
+                                            ws_results.write(0, c_idx, str(c_name), header_fmt)
+                                        ws_results.set_column(0, max(0, len(filtered_df.columns) - 1), 20)
+
+                            buffer.seek(0)
+                            st.download_button(
+                                label=f"⬇️ Save Combined Export (.xlsx)",
+                                data=buffer.getvalue(),
+                                file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        except Exception:
+                            st.info("Excel engine not available. Please install openpyxl or xlsxwriter.")
+                    else:
+                        # CSV export - identical to 'Filtered Results' sheet
+                        csv_data = filtered_df.to_csv(index=False)
                         st.download_button(
-                            label=f"⬇️ Save Combined Export (.xlsx)",
-                            data=buffer.getvalue(),
-                            file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                            data=csv_data,
+                            file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
                         )
-                    except Exception:
-                        st.info("Excel engine not available. Please install openpyxl or xlsxwriter to enable Excel export.")
-                else:
-                    # CSV export identical to 'Filtered Results' sheet (no extra text)
-                    csv_data = filtered_df.to_csv(index=False)
-                    st.download_button(
-                        label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
-                        data=csv_data,
-                        file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-            except Exception as e:
-                st.info("Provide trained model and feature list in results to enable DIA-NN export.")
-                with st.expander("Export details / troubleshooting"):
-                    st.code(str(e))
-        except Exception:
-            pass
+                except Exception as e:
+                    st.info("Provide trained model and feature list in results to enable DIA-NN export.")
+                    with st.expander("Export details / troubleshooting"):
+                        st.code(str(e))
+
+        except Exception as e:
+            st.error(f"Error preparing export: {str(e)}")
+            with st.expander("Export details / troubleshooting"):
+                st.code(str(e))
     
     st.markdown("### 📊 Analysis Files")
     
@@ -4124,10 +4224,94 @@ def show_inference_interface():
             # For formatted results, we need to extract the model info
             # This is a fallback for cases where inference_results contains formatted data
             if 'results' in st.session_state.inference_results:
+                # Check if this is batch mode
+                is_batch_results = (
+                    st.session_state.inference_results.get('config', {}).get('batch_mode') or
+                    st.session_state.inference_results.get('summary', {}).get('batch_mode')
+                )
+
+                if is_batch_results:
+                    # BATCH MODE: Show combined results from multiple methods
+                    st.markdown("### 📦 Batch Inference Results")
+                    methods_processed = st.session_state.inference_results.get('summary', {}).get('methods_processed', 0)
+                    st.markdown(f"**Analysis complete!** Processed **{methods_processed}** methods.")
+
+                    # Convert to DataFrame
+                    results_df = pd.DataFrame(st.session_state.inference_results['results'])
+
+                    # Summary metrics for batch mode
+                    method_summaries = st.session_state.inference_results.get('summary', {}).get('method_summaries', {})
+                    if method_summaries:
+                        st.markdown("#### 📊 Per-Method Summary")
+                        summary_cols = st.columns(min(len(method_summaries), 4))
+                        for idx, (method_name, method_sum) in enumerate(method_summaries.items()):
+                            with summary_cols[idx % 4]:
+                                st.markdown(f"**{method_name}**")
+                                st.metric("Baseline", f"{method_sum.get('baseline_peptides', 0):,}")
+                                if method_sum.get('ground_truth_peptides', 0) > 0:
+                                    st.metric("Ground Truth", f"{method_sum.get('ground_truth_peptides', 0):,}")
+
+                    st.markdown("---")
+
+                    # Method filter for viewing results
+                    if 'Source_Method' in results_df.columns:
+                        available_methods = sorted(results_df['Source_Method'].unique().tolist())
+                        selected_view_methods = st.multiselect(
+                            "🔍 Filter by method:",
+                            ["All Methods"] + available_methods,
+                            default=["All Methods"],
+                            key="batch_method_filter"
+                        )
+
+                        if "All Methods" not in selected_view_methods and selected_view_methods:
+                            results_df = results_df[results_df['Source_Method'].isin(selected_view_methods)]
+
+                    # Show tabs
+                    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Detailed Plots", "📋 Data Tables", "💾 Export"])
+
+                    with tab1:
+                        # Batch overview - show aggregated metrics
+                        if 'Source_Method' in results_df.columns:
+                            st.markdown("##### Peptides Discovered by Method and FDR")
+                            pivot_df = results_df.pivot_table(
+                                index='Source_Method',
+                                columns='Target_FDR',
+                                values='Additional_Peptides',
+                                aggfunc='first'
+                            )
+                            st.dataframe(pivot_df.style.format("{:.0f}"), use_container_width=True)
+                        else:
+                            display_overview_plots(results_df)
+
+                    with tab2:
+                        display_detailed_plots(results_df)
+
+                    with tab3:
+                        st.markdown("##### 📋 All Results")
+                        # Rename columns for display
+                        display_df = results_df.copy()
+                        rename_map = {
+                            'Source_Method': 'Source Method',
+                            'Target_FDR': 'Target FDR (%)',
+                            'Additional_Peptides': 'Additional Peptides',
+                            'False_Positives': 'False Positives',
+                            'Actual_FDR': 'Actual FDR (%)',
+                            'Recovery_Pct': 'Recovery %',
+                            'Increase_Pct': 'Increase %',
+                        }
+                        display_df = display_df.rename(columns=rename_map)
+                        st.dataframe(display_df, use_container_width=True)
+
+                    with tab4:
+                        display_export_options(st.session_state.inference_results, include_general_exports=False)
+
+                    return
+
+                # SINGLE METHOD MODE: Original behavior
                 # This is results from inference flow - show with tabs
                 st.markdown("### 📊 Inference Results")
                 st.markdown("**Analysis complete!**")
-                
+
                 # Convert to DataFrame and display with tabs
                 results_df = pd.DataFrame(st.session_state.inference_results['results'])
                 
@@ -4369,25 +4553,45 @@ def show_inference_interface():
         **Original Test:** {config['test_method']}
         """)
     
-    # Get only grouped methods for inference
+    # Get only grouped methods for inference (including discovery mode samples without ground truth)
     @st.cache_data(ttl=300)
     def get_grouped_methods_cached(dataset_filter):
-        # Only show configured grouped methods (e.g., ASTRAL_Group_002)
-        configured = get_configured_methods(dataset_filter)
-        return sorted(configured)
+        # Show all available methods including those without ground truth (for discovery/inference mode)
+        all_methods = get_all_available_methods(dataset_filter, include_discovery_mode=True)
+        return sorted(all_methods)
 
     # Get available grouped methods only
     available_methods_filtered = get_grouped_methods_cached(dataset_filter)
-    
-    # Data selection (clean layout)
-    test_method = st.sidebar.selectbox(
-        "🧪 Select test method:",
-        available_methods_filtered,
-        help="Choose the grouped method to apply the model to"
+
+    # Data selection (clean layout) - BATCH MODE: allow multiple methods
+    st.sidebar.markdown("#### 🧪 Test Methods")
+    batch_mode = st.sidebar.checkbox(
+        "📦 Batch Mode (multiple files)",
+        value=False,
+        help="Select multiple methods to run inference on all at once, with combined export"
     )
 
-    # Check if selected test method was used in training
-    if test_method and test_method in config.get('train_methods', []):
+    if batch_mode:
+        test_methods = st.sidebar.multiselect(
+            "Select test methods:",
+            available_methods_filtered,
+            default=[available_methods_filtered[0]] if available_methods_filtered else [],
+            help="Choose multiple methods to apply the model to. Results will include a source column for filtering."
+        )
+        # For compatibility with single-method code paths
+        test_method = test_methods[0] if test_methods else None
+    else:
+        test_method = st.sidebar.selectbox(
+            "Select test method:",
+            available_methods_filtered,
+            help="Choose the grouped method to apply the model to"
+        )
+        test_methods = [test_method] if test_method else []
+
+    # Check if any selected test method was used in training
+    methods_in_training = [m for m in test_methods if m in config.get('train_methods', [])]
+    if methods_in_training:
+        methods_str = ", ".join([f"<code>{m}</code>" for m in methods_in_training])
         st.sidebar.markdown(f"""
             <div style="
                 background-color: #fff3cd;
@@ -4397,7 +4601,7 @@ def show_inference_interface():
                 margin-top: 10px;
                 font-size: 0.9rem;
             ">
-                <strong>⚠️ Note:</strong> <code>{test_method}</code> was used for training this model.
+                <strong>⚠️ Note:</strong> {methods_str} {'was' if len(methods_in_training) == 1 else 'were'} used for training this model.
             </div>
         """, unsafe_allow_html=True)
 
@@ -4427,19 +4631,26 @@ def show_inference_interface():
         )
     
     # Run inference button in sidebar and header
-    run_inference = st.sidebar.button("🚀 Run Inference", type="primary", use_container_width=True)
-    
+    button_label = "🚀 Run Batch Inference" if batch_mode else "🚀 Run Inference"
+    run_inference = st.sidebar.button(button_label, type="primary", use_container_width=True)
+
     # Also add the button to the header placeholder
     with inference_button_placeholder:
-        if st.button("🚀 Run Inference", type="primary", key="big_inference_btn"):
+        if st.button(button_label, type="primary", key="big_inference_btn"):
             run_inference = True
-    
+
     # Handle inference execution
     if run_inference:
-        if target_fdr_levels:
-            run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_levels)
-        else:
+        if not target_fdr_levels:
             st.error("Please select at least one target FDR level")
+        elif not test_methods:
+            st.error("Please select at least one test method")
+        elif batch_mode and len(test_methods) > 1:
+            # Run batch inference for multiple methods
+            run_batch_inference_analysis(selected_model, test_methods, test_fdr, target_fdr_levels)
+        else:
+            # Single method inference (original behavior)
+            run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_levels)
     
     # Main content area - professional layout with cards
     st.markdown("### 🔮 Inference Mode - Apply Trained Model")
@@ -4790,15 +5001,17 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             
             # Check if we should use original training thresholds
             use_original_thresholds = st.sidebar.checkbox(
-                "🎯 Use Original Training Thresholds", 
+                "🎯 Use Training Thresholds (Recommended)", 
                 value=True,
-                help="Use thresholds from training to validate FDR on new data"
+                help="Use thresholds calibrated from K-fold OOF predictions on training data. These thresholds are rigorous and don't use test data for calibration."
             )
             
             # Get original training results if available
             original_thresholds = {}
             
             if use_original_thresholds and 'training_results' in model_metadata:
+                # Check if thresholds are OOF-calibrated (new models have Threshold_Source)
+                threshold_source = "training"
                 for result in model_metadata['training_results']:
                     target_fdr_raw = result.get('Target_FDR', 0)
                     # Handle both string ("1%") and numeric (1) formats
@@ -4809,8 +5022,14 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     
                     if target_fdr_val > 0:
                         original_thresholds[target_fdr_val] = result.get('Threshold', 0.5)
-                st.sidebar.success(f"✅ Found {len(original_thresholds)} original thresholds")
-                # Original thresholds loaded successfully
+                        # Check for OOF-calibrated thresholds (new models)
+                        if result.get('Threshold_Source') == 'OOF-calibrated':
+                            threshold_source = "OOF-calibrated"
+                
+                if threshold_source == "OOF-calibrated":
+                    st.sidebar.success(f"✅ Found {len(original_thresholds)} OOF-calibrated thresholds (rigorous)")
+                else:
+                    st.sidebar.info(f"ℹ️ Found {len(original_thresholds)} training thresholds")
             elif use_original_thresholds:
                 st.sidebar.warning("⚠️ No training_results found in model metadata - using optimization")
             
@@ -4953,7 +5172,9 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                     'additional_candidates': len(additional_peptides),
                     'validated_candidates': np.sum(y_test == 1),  # Actual count of peptides in ground truth
                     'test_samples': len(test_data),
-                    'training_samples': len(test_data),  # For inference, same as test_samples
+                    'training_samples_total': 0,  # No training in inference mode
+                    'training_samples_model': 0,
+                    'calibration_samples': 0,
                     'unique_test_peptides': test_data['Modified.Sequence'].nunique(),
                     'missed_peptides': max(0, len(ground_truth_peptides) - len(baseline_peptides)),
                     'runtime_minutes': 0.1,  # Inference is fast
@@ -4993,6 +5214,318 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             import traceback
             with st.expander("🔍 Error Details"):
                 st.code(traceback.format_exc())
+
+
+def run_batch_inference_analysis(selected_model, test_methods, test_fdr, target_fdr_levels):
+    """Run batch inference analysis for multiple test methods and combine results."""
+    # Store test methods in session state for results display
+    st.session_state.inference_test_methods = test_methods
+    st.session_state.inference_batch_mode = True
+
+    # Create progress container
+    progress_container = st.container()
+
+    with progress_container:
+        st.markdown("### 🔄 Running Batch Inference...")
+        st.markdown(f"Processing **{len(test_methods)}** methods...")
+        overall_progress = st.progress(0)
+        method_status = st.empty()
+        detail_status = st.empty()
+
+        try:
+            import joblib
+            from src.peptidia.core.peptide_validator_api import PeptideValidatorAPI
+
+            # Create API instance
+            api = PeptideValidatorAPI()
+
+            # Set the feature selection configuration from the saved model
+            api.feature_selection = selected_model['config']['feature_selection']
+
+            method_status.text("Loading saved model...")
+
+            # Load the saved model (once for all methods)
+            results_dir = selected_model['results_dir']
+            models_dir = os.path.join(results_dir, "saved_models")
+
+            model_path = os.path.join(models_dir, "trained_model.joblib")
+            features_path = os.path.join(models_dir, "training_features.joblib")
+            metadata_path = os.path.join(models_dir, "model_metadata.json")
+
+            if not os.path.exists(model_path):
+                st.error(f"❌ Trained model not found: {model_path}")
+                st.info("💡 This model was trained before model saving was implemented. Please retrain to use inference mode.")
+                return
+
+            trained_model = joblib.load(model_path)
+            training_features = joblib.load(features_path)
+
+            if not isinstance(training_features, list):
+                if hasattr(training_features, 'tolist'):
+                    training_features = training_features.tolist()
+                elif isinstance(training_features, tuple):
+                    training_features = list(training_features)
+
+            with open(metadata_path, 'r') as f:
+                model_metadata = json.load(f)
+
+            original_config = selected_model['config']
+
+            # Get original training thresholds if available
+            original_thresholds = {}
+            if 'training_results' in model_metadata:
+                # Check for OOF-calibrated thresholds
+                threshold_source = "training"
+                for result in model_metadata['training_results']:
+                    target_fdr_raw = result.get('Target_FDR', 0)
+                    if isinstance(target_fdr_raw, str):
+                        target_fdr_val = float(target_fdr_raw.replace('%', ''))
+                    else:
+                        target_fdr_val = float(target_fdr_raw)
+                    if target_fdr_val > 0:
+                        original_thresholds[target_fdr_val] = result.get('Threshold', 0.5)
+                        if result.get('Threshold_Source') == 'OOF-calibrated':
+                            threshold_source = "OOF-calibrated"
+                            
+                if threshold_source == "OOF-calibrated":
+                    st.success(f"✅ Using {len(original_thresholds)} OOF-calibrated thresholds (rigorous)")
+                else:
+                    st.info(f"ℹ️ Using {len(original_thresholds)} training thresholds")
+
+            aggregation_method = selected_model.get('config', {}).get('aggregation_method', 'max')
+
+            # Configure prediction device
+            try:
+                import os as _os
+                desired_dev = str(_os.environ.get('PEPTIDIA_PREDICT_DEVICE', '')).lower()
+                if hasattr(trained_model, 'get_booster') and hasattr(trained_model.get_booster(), 'set_param'):
+                    if desired_dev == 'cuda':
+                        trained_model.get_booster().set_param({'device': 'cuda'})
+                    else:
+                        trained_model.get_booster().set_param({'device': 'cpu'})
+            except Exception:
+                pass
+
+            # Process each method
+            all_results = []  # Combined results with Source_Method column
+            all_selected_sequences = {}  # Combined selected sequences by method and FDR
+            method_summaries = {}  # Summary for each method
+
+            for method_idx, test_method in enumerate(test_methods):
+                method_progress = (method_idx / len(test_methods))
+                overall_progress.progress(method_progress)
+                method_status.text(f"📊 Processing method {method_idx + 1}/{len(test_methods)}: **{test_method}**")
+
+                try:
+                    detail_status.text(f"Loading data for {test_method}...")
+
+                    # Load data for this method
+                    baseline_peptides = api._load_baseline_peptides(test_method)
+                    ground_truth_peptides = api._load_ground_truth_peptides(test_method)
+
+                    test_data_result = api._load_test_data(test_method, test_fdr, baseline_peptides, ground_truth_peptides)
+
+                    if isinstance(test_data_result, tuple):
+                        test_data, y_test, additional_peptides = test_data_result
+                    else:
+                        test_data = test_data_result
+                        y_test = test_data['Modified.Sequence'].isin(ground_truth_peptides).astype(int)
+                        additional_peptides = set(test_data['Modified.Sequence']) - baseline_peptides
+
+                    if len(test_data) == 0:
+                        st.warning(f"⚠️ No test data found for {test_method} at {test_fdr}% FDR - skipping")
+                        continue
+
+                    detail_status.text(f"Creating features for {test_method}...")
+
+                    # Create features
+                    X_test = api._make_advanced_features(test_data, training_features)
+
+                    # Ensure features match
+                    missing_features = set(training_features) - set(X_test.columns)
+                    if missing_features:
+                        for feature in missing_features:
+                            X_test[feature] = 0
+                    X_test = X_test[training_features]
+
+                    detail_status.text(f"Making predictions for {test_method}...")
+
+                    # Make predictions
+                    y_scores = trained_model.predict_proba(X_test)[:, 1]
+
+                    # Aggregate predictions
+                    peptide_data, peptide_predictions, peptide_labels = api._aggregate_predictions_by_peptide(
+                        test_data, y_scores, y_test, aggregation_method=aggregation_method
+                    )
+
+                    is_discovery_mode = len(ground_truth_peptides) == 0
+
+                    # Process each target FDR
+                    seq_col_agg = 'Modified.Sequence' if 'Modified.Sequence' in peptide_data.columns else 'Stripped.Sequence'
+                    last_threshold = None
+                    last_tp = 0
+
+                    method_selected_sequences = {}
+
+                    for target_fdr in target_fdr_levels:
+                        # Get threshold
+                        if target_fdr in original_thresholds:
+                            threshold = original_thresholds[target_fdr]
+                        elif is_discovery_mode:
+                            threshold = original_thresholds.get(target_fdr, 0.5)
+                        else:
+                            threshold, tp, actual_fdr = api._find_optimal_threshold(
+                                peptide_labels, peptide_predictions, target_fdr,
+                                previous_threshold=last_threshold, previous_tp=last_tp, verbose=False
+                            )
+
+                        # Calculate metrics
+                        if threshold is not None:
+                            y_pred = (peptide_predictions >= threshold).astype(int)
+                            discovered_peptides = np.sum(y_pred == 1)
+
+                            # Capture selected sequences
+                            try:
+                                selected_seq = peptide_data.loc[y_pred == 1, seq_col_agg].astype(str).tolist()
+                                method_selected_sequences[float(target_fdr)] = selected_seq
+                            except Exception:
+                                pass
+
+                            if is_discovery_mode:
+                                tp = discovered_peptides
+                                fp = 0
+                                actual_fdr = 0
+                            else:
+                                tp = np.sum((y_pred == 1) & (peptide_labels == 1))
+                                fp = np.sum((y_pred == 1) & (peptide_labels == 0))
+                                actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
+                        else:
+                            y_pred = np.zeros_like(peptide_predictions, dtype=int)
+                            tp = 0
+                            fp = 0
+                            actual_fdr = 0
+                            discovered_peptides = 0
+
+                        # Update trackers
+                        if threshold is not None and not is_discovery_mode:
+                            last_threshold = threshold if last_threshold is None else min(last_threshold, threshold)
+                            last_tp = max(last_tp, int(tp))
+
+                        # Calculate percentages
+                        if is_discovery_mode:
+                            total_validated = len(baseline_peptides)
+                            recovery_pct = 0
+                            increase_pct = (discovered_peptides / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
+                        else:
+                            total_validated = np.sum(peptide_labels == 1)
+                            recovery_pct = (tp / total_validated * 100) if total_validated > 0 else 0
+                            increase_pct = (tp / len(baseline_peptides) * 100) if len(baseline_peptides) > 0 else 0
+
+                        # Calculate MCC
+                        if is_discovery_mode:
+                            mcc = 0
+                        else:
+                            tn = np.sum((y_pred == 0) & (peptide_labels == 0))
+                            fn = np.sum((y_pred == 0) & (peptide_labels == 1))
+                            numerator = (tp * tn) - (fp * fn)
+                            denominator = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+                            mcc = numerator / denominator if denominator > 0 else 0
+
+                        # Add result with Source_Method column
+                        all_results.append({
+                            'Source_Method': test_method,  # Key column for filtering!
+                            'Target_FDR': target_fdr,
+                            'Threshold': threshold if threshold is not None else 0.5,
+                            'Additional_Peptides': discovered_peptides if is_discovery_mode else tp,
+                            'False_Positives': fp,
+                            'Actual_FDR': actual_fdr,
+                            'Precision': tp / (tp + fp) if (tp + fp) > 0 else 0,
+                            'Recovery_Pct': recovery_pct,
+                            'Increase_Pct': increase_pct,
+                            'Total_Validated_Candidates': total_validated,
+                            'MCC': mcc
+                        })
+
+                    # Store method summary
+                    method_summaries[test_method] = {
+                        'baseline_peptides': len(baseline_peptides),
+                        'ground_truth_peptides': len(ground_truth_peptides),
+                        'additional_candidates': len(additional_peptides),
+                        'validated_candidates': np.sum(y_test == 1),
+                        'test_samples': len(test_data)
+                    }
+
+                    # Store selected sequences for this method
+                    all_selected_sequences[test_method] = method_selected_sequences
+
+                except Exception as method_error:
+                    st.warning(f"⚠️ Error processing {test_method}: {str(method_error)}")
+                    continue
+
+            overall_progress.progress(100)
+            method_status.text("✅ Batch inference completed!")
+            detail_status.empty()
+
+            if not all_results:
+                st.error("❌ No results were generated. Please check your data and try again.")
+                return
+
+            # Create combined analysis results
+            # Calculate aggregated summary
+            total_baseline = sum(s['baseline_peptides'] for s in method_summaries.values())
+            total_ground_truth = sum(s['ground_truth_peptides'] for s in method_summaries.values())
+            total_candidates = sum(s['additional_candidates'] for s in method_summaries.values())
+
+            analysis_results = {
+                'config': {
+                    'train_methods': original_config['train_methods'],
+                    'test_method': ', '.join(test_methods),  # Combined for display
+                    'test_methods': test_methods,  # List for batch export
+                    'train_fdr_levels': original_config['train_fdr_levels'],
+                    'test_fdr': test_fdr,
+                    'target_fdr_levels': target_fdr_levels,
+                    'xgb_params': original_config['xgb_params'],
+                    'feature_selection': original_config['feature_selection'],
+                    'aggregation_method': aggregation_method,
+                    'batch_mode': True
+                },
+                'summary': {
+                    'baseline_peptides': total_baseline,
+                    'ground_truth_peptides': total_ground_truth,
+                    'additional_candidates': total_candidates,
+                    'methods_processed': len(method_summaries),
+                    'method_summaries': method_summaries,
+                    'runtime_minutes': 0.1,
+                    'inference_mode': True,
+                    'batch_mode': True,
+                    'results_dir': results_dir
+                },
+                'results': all_results,
+                'metadata': {
+                    'analysis_timestamp': datetime.now().isoformat(),
+                    'model_metadata': model_metadata,
+                    'inference_mode': True,
+                    'batch_mode': True
+                },
+                'trained_model': trained_model,
+                'feature_names': training_features,
+                'selected_sequences_by_method_fdr': all_selected_sequences
+            }
+
+            # Store in session state
+            st.session_state.inference_results = analysis_results
+            st.session_state.inference_complete = True
+            st.session_state.inference_batch_mode = True
+
+            progress_container.empty()
+            st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Error during batch inference: {str(e)}")
+            import traceback
+            with st.expander("🔍 Error Details"):
+                st.code(traceback.format_exc())
+
 
 def discover_saved_models():
     """Discover all saved models with their metadata from the streamlit saved_models directory."""
@@ -5634,7 +6167,7 @@ def display_inference_table_only(df):
         • **Actual FDR**: Measured false discovery rate of additional peptides
         • **Recovery %**: Percentage of validated candidates successfully recovered
         • **Increase %**: Improvement over baseline peptide count
-        • **MCC**: Matthews Correlation Coefficient (-1 to +1, higher is better quality predictions)
+        • **MCC**: Matthews Correlation Coefficient (-1 to +1, higher is better)
         """)
     
     # Format the dataframe for display
