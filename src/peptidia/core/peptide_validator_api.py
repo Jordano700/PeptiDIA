@@ -155,14 +155,12 @@ class PeptideValidatorAPI:
             'use_ms_features': True,
             'use_statistical_features': True,
             'use_library_features': True,
-            'excluded_features': list(self._leakage_guard_columns)
+            'excluded_features': list(self._leakage_guard_columns),
+            'feature_mode': 'peptidia'  # 'peptidia' (87 features) or 'full' (extended for PTM/specialized data)
         }
 
-        # Curated list of 42 DIA-NN features with non-zero importance across all trained models.
-        # Combined with engineered features (2 log + 1 seq_len + 40 aa + 2 zscore) = 87 total.
-        # Features like Run.Index, Decoy, PTM.Site.Confidence, etc. showed zero importance
-        # and are excluded for reproducibility and efficiency.
-        self._allowed_diann_features = {
+        # PeptiDIA mode: Curated 42 DIA-NN features with non-zero importance (87 total with engineered)
+        self._peptidia_diann_features = {
             # Quality Metrics (20)
             'GG.Q.Value', 'Q.Value', 'PEP', 'PG.Q.Value', 'PG.PEP', 'Global.Q.Value',
             'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value',
@@ -177,7 +175,23 @@ class PeptideValidatorAPI:
             'Ms1.Total.Signal.Before', 'Ms1.Total.Signal.After', 'iIM', 'Precursor.Lib.Index'
         }
 
-        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area'}  # Only features with non-zero importance
+        # Full mode: Additional features for PTM analysis and specialized workflows
+        self._extended_diann_features = {
+            # PTM-related features
+            'PTM.Site.Confidence', 'Lib.PTM.Site.Confidence',
+            'Peptidoform.Q.Value', 'Lib.Peptidoform.Q.Value',
+            # Library features
+            'Lib.Q.Value', 'Lib.PG.Q.Value',
+            'Translated.Q.Value', 'Channel.Q.Value',
+            # Normalization features
+            'Normalisation.Factor', 'Normalisation.Noise', 'Empirical.Quality',
+            # Additional MS features
+            'PG.TopN', 'Genes.TopN', 'Ms2.Area', 'Peak.Height',
+            # Ion mobility features
+            'Ion.Mobility', 'CCS', 'IM', 'Predicted.IM', 'Predicted.iIM'
+        }
+
+        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area'}  # Only features with non-zero importance in PeptiDIA
         self.engineer_ratios = []  # Ratio features showed zero importance
         # Default calibration method (overridden by run_analysis)
         self.calibration_method = 'isotonic'
@@ -883,18 +897,27 @@ class PeptideValidatorAPI:
         }
     
     def _make_advanced_features(self, df: pd.DataFrame, training_features=None) -> pd.DataFrame:
-        """Create comprehensive feature table with 87 curated features.
+        """Create comprehensive feature table.
 
-        Features: 42 DIA-NN + 2 log + 1 seq_len + 40 amino acid + 2 zscore = 87 total.
-        All features showed non-zero importance across trained models.
+        Two modes controlled by feature_selection['feature_mode']:
+        - 'peptidia' (default): 87 curated features with proven importance
+        - 'full': Extended feature set including PTM and ion mobility features
         """
         feat_map: Dict[str, pd.Series] = {}
 
-        # Get the curated allowlist of 42 DIA-NN features
-        allowed_features = getattr(self, '_allowed_diann_features', set())
+        # Determine feature mode
+        feature_mode = self.feature_selection.get('feature_mode', 'peptidia')
         leakage_cols = {c.lower() for c in getattr(self, '_leakage_guard_columns', {'source_fdr'})}
 
-        # Add allowed DIA-NN numeric features (42 features)
+        # Build allowed features based on mode
+        peptidia_features = getattr(self, '_peptidia_diann_features', set())
+        if feature_mode == 'full':
+            extended_features = getattr(self, '_extended_diann_features', set())
+            allowed_features = peptidia_features | extended_features
+        else:
+            allowed_features = peptidia_features
+
+        # Add allowed DIA-NN numeric features
         for col in df.columns:
             if col.lower() in leakage_cols:
                 continue
@@ -902,8 +925,9 @@ class PeptideValidatorAPI:
                 if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
                     feat_map[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # Add engineered log features (2 features)
-        for col in self.engineer_log:
+        # Add engineered log features (extended in full mode)
+        log_cols = self.engineer_log if feature_mode == 'peptidia' else {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}
+        for col in log_cols:
             if col in df.columns:
                 vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 feat_map[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
@@ -921,9 +945,10 @@ class PeptideValidatorAPI:
                 # Avoid divide-by-zero; handled by fillna later
                 feat_map[f'aa_freq_{aa}'] = counts / seq_len.replace(0, np.nan)
 
-        # Add z-score statistical features (2 features)
+        # Add z-score statistical features (extended in full mode)
         if self.feature_selection.get('use_statistical_features', True):
-            for col in ['Ms1.Area', 'Precursor.Quantity']:
+            zscore_cols = ['Ms1.Area', 'Precursor.Quantity'] if feature_mode == 'peptidia' else ['Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity']
+            for col in zscore_cols:
                 if col in df.columns:
                     vals = pd.to_numeric(df[col], errors='coerce')
                     feat_map[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
