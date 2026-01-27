@@ -396,7 +396,7 @@ st.markdown("""
 FEATURE_CATEGORY_DESCRIPTIONS = {
     'Quality Metrics': 'Statistical confidence scores, Q-values, PEP scores, and probability measures from DIA-NN',
     'Sequence Properties': 'Peptide sequence characteristics, protein IDs, gene names, and sequence length',
-    'Amino Acid Composition': 'Amino acid counts and frequencies for specific residues (C, R, H, K, E, D, P, M)',
+    'Amino Acid Composition': 'Amino acid counts and frequencies for all 20 standard amino acids',
     'Transformed Features': 'Logarithmically transformed and z-score normalized features for better model performance',
     'Intensity Features': 'Raw signal measurements including precursor quantity, peak areas, MaxLFQ values',
     'Chromatographic': 'Retention time properties including RT, iRT, predicted RT, and peak width (FWHM)',
@@ -1723,7 +1723,7 @@ def show_landing_page():
     # Discover available datasets and show them dynamically
     files_info = discover_available_files()
     available_datasets = set()
-    for category in ['training', 'ground_truth']:
+    for category in ['training', 'ground_truth', 'baseline']:
         for file_info in files_info.get(category, []):
             available_datasets.add(file_info['dataset'])
     
@@ -4552,8 +4552,8 @@ def show_inference_interface():
 
     test_fdr = st.sidebar.selectbox(
         "📈 Select test FDR level:",
-        [1, 20, 50],
-        index=2,  # Default to 50% like training
+        [20, 50],
+        index=1,  # Default to 50% like training
         help="Choose the FDR level for the test dataset"
     )
     
@@ -4567,7 +4567,7 @@ def show_inference_interface():
             # If no target_fdr_levels in config, show warning and use standard levels
             available_fdr_levels = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0]
             st.warning("⚠️ Model config missing target_fdr_levels. Using standard levels (may not work correctly)")
-        
+
         target_fdr_levels = st.multiselect(
             "FDR Levels (%):",
             available_fdr_levels,
@@ -6865,19 +6865,32 @@ def show_setup_interface():
     st.markdown("""
         <style>
         [data-testid="stExpander"] > details > summary {
-            font-size: 1.1rem !important;
-            padding: 1rem 1.25rem !important;
-            font-weight: 600 !important;
+            font-size: 1.8rem !important;
+            padding: 2rem 2.5rem !important;
+            font-weight: 700 !important;
+            min-height: 120px !important;
+            display: flex !important;
+            align-items: center !important;
         }
         div[data-testid="column"]:first-child [data-testid="stExpander"] > details {
-            border: 2px solid #22c55e !important;
-            border-radius: 12px !important;
+            border: 3px solid #22c55e !important;
+            border-radius: 14px !important;
             background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%) !important;
+            box-shadow: 0 4px 6px rgba(34, 197, 94, 0.15) !important;
+        }
+        div[data-testid="column"]:first-child [data-testid="stExpander"] > details:hover {
+            box-shadow: 0 6px 12px rgba(34, 197, 94, 0.25) !important;
+            transform: translateY(-1px);
         }
         div[data-testid="column"]:last-child [data-testid="stExpander"] > details {
-            border: 2px solid #ef4444 !important;
-            border-radius: 12px !important;
+            border: 3px solid #ef4444 !important;
+            border-radius: 14px !important;
             background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%) !important;
+            box-shadow: 0 4px 6px rgba(239, 68, 68, 0.15) !important;
+        }
+        div[data-testid="column"]:last-child [data-testid="stExpander"] > details:hover {
+            box-shadow: 0 6px 12px rgba(239, 68, 68, 0.25) !important;
+            transform: translateY(-1px);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -6896,7 +6909,7 @@ def show_setup_interface():
     st.markdown("---")
 
     # Subtitle
-    st.markdown("*Configure ground truth mapping for your datasets visually - no JSON editing required*")
+    st.markdown("*Configure ground truth mapping for your datasets visually*")
 
     # Discover available files first
     try:
