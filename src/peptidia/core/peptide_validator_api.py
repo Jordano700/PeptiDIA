@@ -158,12 +158,27 @@ class PeptideValidatorAPI:
             'excluded_features': list(self._leakage_guard_columns)
         }
 
-        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}  # Removed Precursor.Charge (small integer, log unnecessary)
-        self.engineer_ratios = [
-            ('Ms1.Area', 'Ms2.Area'),
-            ('Peak.Height', 'Ms1.Area'),
-            ('Precursor.Quantity', 'Peak.Height')
-        ]
+        # Curated list of 42 DIA-NN features with non-zero importance across all trained models.
+        # Combined with engineered features (2 log + 1 seq_len + 40 aa + 2 zscore) = 87 total.
+        # Features like Run.Index, Decoy, PTM.Site.Confidence, etc. showed zero importance
+        # and are excluded for reproducibility and efficiency.
+        self._allowed_diann_features = {
+            # Quality Metrics (20)
+            'GG.Q.Value', 'Q.Value', 'PEP', 'PG.Q.Value', 'PG.PEP', 'Global.Q.Value',
+            'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value',
+            'Quantity.Quality', 'PG.MaxLFQ.Quality', 'Genes.MaxLFQ.Quality',
+            'Genes.MaxLFQ.Unique.Quality', 'Proteotypic', 'Evidence', 'Mass.Evidence',
+            'Channel.Evidence', 'PG.MaxLFQ', 'Genes.MaxLFQ', 'Genes.MaxLFQ.Unique',
+            # MS/Chromatography (22)
+            'RT', 'iRT', 'Predicted.RT', 'Predicted.iRT', 'RT.Start', 'RT.Stop',
+            'Precursor.Mz', 'Precursor.Charge', 'Best.Fr.Mz', 'Best.Fr.Mz.Delta',
+            'Ms1.Apex.Mz.Delta', 'Ms1.Area', 'Ms1.Apex.Area', 'Precursor.Quantity',
+            'Precursor.Normalised', 'Ms1.Normalised', 'FWHM', 'Ms1.Profile.Corr',
+            'Ms1.Total.Signal.Before', 'Ms1.Total.Signal.After', 'iIM', 'Precursor.Lib.Index'
+        }
+
+        self.engineer_log = {'Precursor.Quantity', 'Ms1.Area'}  # Only features with non-zero importance
+        self.engineer_ratios = []  # Ratio features showed zero importance
         # Default calibration method (overridden by run_analysis)
         self.calibration_method = 'isotonic'
     
@@ -868,92 +883,47 @@ class PeptideValidatorAPI:
         }
     
     def _make_advanced_features(self, df: pd.DataFrame, training_features=None) -> pd.DataFrame:
-        """Create comprehensive feature table with advanced engineering.
+        """Create comprehensive feature table with 87 curated features.
 
-        Optimized to avoid DataFrame fragmentation by assembling features in a
-        dictionary and constructing the DataFrame once.
+        Features: 42 DIA-NN + 2 log + 1 seq_len + 40 amino acid + 2 zscore = 87 total.
+        All features showed non-zero importance across trained models.
         """
         feat_map: Dict[str, pd.Series] = {}
-        
-        # Add numeric features based on feature selection
-        diann_quality_cols = ['GG.Q.Value', 'PEP', 'PG.PEP', 'PG.Q.Value', 'Q.Value', 'Global.Q.Value',
-                              'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value', 
-                              'Proteotypic', 'Evidence', 'Genes.MaxLFQ.Quality', 'PG.MaxLFQ.Quality',
-                              'Quantity.Quality', 'Genes.MaxLFQ', 'PG.MaxLFQ', 'Genes.MaxLFQ.Unique',
-                              'Genes.MaxLFQ.Unique.Quality', 'Mass.Evidence', 'Channel.Evidence',
-                              'Channel.Q.Value', 'Translated.Q.Value', 'Lib.PTM.Site.Confidence',
-                              'PTM.Site.Confidence', 'Lib.Peptidoform.Q.Value', 'Peptidoform.Q.Value',
-                              'Lib.Q.Value', 'Lib.PG.Q.Value', 'Normalisation.Noise', 'Empirical.Quality',
-                              'Normalisation.Factor', 'Genes.TopN', 'PG.TopN', 'Decoy']
-        ms_cols = ['iRT', 'Predicted.RT', 'Precursor.Mz', 'Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity',
-                   'Precursor.Charge', 'FWHM', 'Ms1.Apex.Area', 'Ms1.Profile.Corr', 'RT.Start', 'RT.Stop', 'RT',
-                   'Ms1.Normalised', 'iIM', 'Ms1.Apex.Mz.Delta', 'Best.Fr.Mz.Delta', 'Best.Fr.Mz', 
-                   'Ms1.Total.Signal.After', 'Ms1.Total.Signal.Before', 'Predicted.iRT', 'Precursor.Normalised',
-                   'Ms1.Translated', 'Ms1.Area.Raw', 'Quantity.Raw', 'Fragment.Quant.Raw', 'Fragment.Quant.Corrected',
-                   'Ms2.Scan', 'Ion.Mobility', 'CCS', 'Charge', 'Index.RT', 'Predicted.iIM', 'Predicted.IM', 'IM',
-                   'Run.Index']
-        library_cols = ['Precursor.Lib.Index', 'PG.MaxLFQ', 'Fragment.Info', 'source_fdr']
-        
+
+        # Get the curated allowlist of 42 DIA-NN features
+        allowed_features = getattr(self, '_allowed_diann_features', set())
         leakage_cols = {c.lower() for c in getattr(self, '_leakage_guard_columns', {'source_fdr'})}
 
+        # Add allowed DIA-NN numeric features (42 features)
         for col in df.columns:
             if col.lower() in leakage_cols:
                 continue
-            if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
-                # Check if this feature should be included based on feature selection
-                include_feature = False
-                
-                if col in diann_quality_cols and self.feature_selection.get('use_diann_quality', True):
-                    include_feature = True
-                elif col in ms_cols and self.feature_selection.get('use_ms_features', True):
-                    include_feature = True  
-                elif col in library_cols and self.feature_selection.get('use_library_features', True):
-                    include_feature = True
-                elif col not in diann_quality_cols and col not in ms_cols and col not in library_cols:
-                    # Include other numeric features if not specifically categorized
-                    include_feature = True
-                
-                # Check if feature is explicitly excluded
-                excluded = set(self.feature_selection.get('excluded_features', []))
-                if col in excluded or col.lower() in leakage_cols:
-                    include_feature = False
-                
-                if include_feature:
+            if col in allowed_features:
+                if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
                     feat_map[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        # Add engineered log features
+
+        # Add engineered log features (2 features)
         for col in self.engineer_log:
             if col in df.columns:
                 vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 feat_map[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
-        
-        # Add ratio features
-        for col1, col2 in self.engineer_ratios:
-            if col1 in df.columns and col2 in df.columns:
-                vals1 = pd.to_numeric(df[col1], errors='coerce').fillna(0)
-                vals2 = pd.to_numeric(df[col2], errors='coerce').fillna(1)
-                feat_map[f'ratio_{col1}_{col2}'] = vals1 / np.maximum(vals2, 1e-10)
-        
-        # Add sequence-based features
+
+        # Add sequence-based features (41 features: 1 length + 20 counts + 20 frequencies)
         if self.feature_selection.get('use_sequence_features', True) and 'Stripped.Sequence' in df.columns:
             sequences = df['Stripped.Sequence'].astype(str)
             seq_len = sequences.str.len()
             feat_map['sequence_length'] = seq_len
-            
+
             # Amino acid composition features - ALL 20 amino acids
             for aa in ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']:
                 counts = sequences.str.count(aa)
                 feat_map[f'aa_count_{aa}'] = counts
                 # Avoid divide-by-zero; handled by fillna later
                 feat_map[f'aa_freq_{aa}'] = counts / seq_len.replace(0, np.nan)
-        
-        # Skip source_fdr feature to prevent data leakage
-        # if 'source_fdr' in df.columns:
-        #     feats['source_fdr'] = df['source_fdr']
-        
-        # Add statistical features
+
+        # Add z-score statistical features (2 features)
         if self.feature_selection.get('use_statistical_features', True):
-            for col in ['Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity']:
+            for col in ['Ms1.Area', 'Precursor.Quantity']:
                 if col in df.columns:
                     vals = pd.to_numeric(df[col], errors='coerce')
                     feat_map[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
