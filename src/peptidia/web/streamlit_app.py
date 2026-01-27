@@ -2025,131 +2025,108 @@ def show_training_interface():
     
     # Feature selection
     with st.sidebar.expander("🎯 Feature Selection"):
-        st.markdown("**Select which feature groups to include:**")
-        
+        # Feature mode selector
+        st.markdown("**Feature Mode:**")
+        feature_mode = st.radio(
+            "Select feature set",
+            options=['peptidia', 'full'],
+            index=0,
+            format_func=lambda x: '🎯 PeptiDIA (87 features)' if x == 'peptidia' else '📊 Full (extended features)',
+            help="PeptiDIA: 87 curated features with proven importance. Full: Extended set including PTM, ion mobility features.",
+            horizontal=True
+        )
+
+        if feature_mode == 'full':
+            st.info("📊 **Full mode** includes additional features for PTM analysis and ion mobility data.")
+
+        st.markdown("---")
+        st.markdown("**Feature groups to include:**")
+
         # DIA-NN Quality Features
-        use_diann_quality = st.checkbox("DIA-NN Quality Metrics", value=True, 
+        use_diann_quality = st.checkbox("DIA-NN Quality Metrics", value=True,
                                        help="All DIA-NN confidence scores: GG.Q.Value, PEP, PG.PEP, PG.Q.Value, Q.Value, Global.Q.Value, Global.PG.Q.Value, Global.Peptidoform.Q.Value, Protein.Q.Value, Proteotypic, Evidence, Genes.MaxLFQ.Quality")
-        
+
         # Sequence Features
         use_sequence_features = st.checkbox("Peptide Sequence Features", value=True,
                                           help="Sequence length, amino acid composition, frequencies")
-        
-        # Mass Spec Features  
+
+        # Mass Spec Features
         use_ms_features = st.checkbox("Mass Spectrometry Features", value=True,
                                     help="Retention time, predicted RT, mass, areas, intensities")
-        
+
         # Statistical Features
         use_statistical_features = st.checkbox("Statistical Features", value=True,
                                              help="Z-scores, ratios, normalized values")
-        
+
         # Library Features
         use_library_features = st.checkbox("Library Features", value=True,
                                          help="Precursor library index, fragment info")
         
         st.markdown("---")
-        st.markdown("**Custom Feature Selection:**")
-        
-        # Get actual features from recent runs if available
-        all_possible_features = []
-        
-        # Try to get features from the most recent run's feature importance data
-        recent_features = []
-        if hasattr(st.session_state, 'results_data') and st.session_state.results_data:
-            if 'feature_analysis' in st.session_state.results_data:
-                feature_data = st.session_state.results_data['feature_analysis']
-                if 'feature_importance' in feature_data:
-                    recent_features = list(feature_data['feature_importance'].get('feature', []))
-        
-        # If we have recent features, use those (they're real!)
-        if recent_features:
-            all_possible_features = sorted(recent_features)
+        st.markdown("**Custom Feature Exclusion:**")
+
+        # Define the 87 PeptiDIA features
+        peptidia_features = [
+            # DIA-NN Quality Metrics (20)
+            'GG.Q.Value', 'Q.Value', 'PEP', 'PG.Q.Value', 'PG.PEP', 'Global.Q.Value',
+            'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value',
+            'Quantity.Quality', 'PG.MaxLFQ.Quality', 'Genes.MaxLFQ.Quality',
+            'Genes.MaxLFQ.Unique.Quality', 'Proteotypic', 'Evidence', 'Mass.Evidence',
+            'Channel.Evidence', 'PG.MaxLFQ', 'Genes.MaxLFQ', 'Genes.MaxLFQ.Unique',
+            # MS/Chromatography (22)
+            'RT', 'iRT', 'Predicted.RT', 'Predicted.iRT', 'RT.Start', 'RT.Stop',
+            'Precursor.Mz', 'Precursor.Charge', 'Best.Fr.Mz', 'Best.Fr.Mz.Delta',
+            'Ms1.Apex.Mz.Delta', 'Ms1.Area', 'Ms1.Apex.Area', 'Precursor.Quantity',
+            'Precursor.Normalised', 'Ms1.Normalised', 'FWHM', 'Ms1.Profile.Corr',
+            'Ms1.Total.Signal.Before', 'Ms1.Total.Signal.After', 'iIM', 'Precursor.Lib.Index',
+            # Engineered: Log (2)
+            'log_Ms1.Area', 'log_Precursor.Quantity',
+            # Engineered: Sequence (41)
+            'sequence_length',
+            'aa_count_A', 'aa_count_C', 'aa_count_D', 'aa_count_E', 'aa_count_F',
+            'aa_count_G', 'aa_count_H', 'aa_count_I', 'aa_count_K', 'aa_count_L',
+            'aa_count_M', 'aa_count_N', 'aa_count_P', 'aa_count_Q', 'aa_count_R',
+            'aa_count_S', 'aa_count_T', 'aa_count_V', 'aa_count_W', 'aa_count_Y',
+            'aa_freq_A', 'aa_freq_C', 'aa_freq_D', 'aa_freq_E', 'aa_freq_F',
+            'aa_freq_G', 'aa_freq_H', 'aa_freq_I', 'aa_freq_K', 'aa_freq_L',
+            'aa_freq_M', 'aa_freq_N', 'aa_freq_P', 'aa_freq_Q', 'aa_freq_R',
+            'aa_freq_S', 'aa_freq_T', 'aa_freq_V', 'aa_freq_W', 'aa_freq_Y',
+            # Engineered: Z-score (2)
+            'zscore_Ms1.Area', 'zscore_Precursor.Quantity'
+        ]
+
+        # Extended features for 'full' mode (PTM, ion mobility, etc.)
+        extended_features = [
+            # PTM features
+            'PTM.Site.Confidence', 'Lib.PTM.Site.Confidence',
+            'Peptidoform.Q.Value', 'Lib.Peptidoform.Q.Value',
+            # Library features
+            'Lib.Q.Value', 'Lib.PG.Q.Value', 'Translated.Q.Value', 'Channel.Q.Value',
+            # Normalization features
+            'Normalisation.Factor', 'Normalisation.Noise', 'Empirical.Quality',
+            # Additional MS features
+            'PG.TopN', 'Genes.TopN', 'Ms2.Area', 'Peak.Height',
+            # Ion mobility features
+            'Ion.Mobility', 'CCS', 'IM', 'Predicted.IM', 'Predicted.iIM',
+            # Extended engineered features
+            'log_Ms2.Area', 'log_Peak.Height',
+            'zscore_Ms2.Area', 'zscore_Peak.Height'
+        ]
+
+        # Select features based on mode
+        if feature_mode == 'peptidia':
+            all_possible_features = sorted(peptidia_features)
+            st.caption(f"Showing {len(all_possible_features)} PeptiDIA features")
         else:
-            # COMPREHENSIVE list - EVERY SINGLE feature that could appear
-            # Based on actual feature importance data from recent runs
-            all_features = [
-                # ========== ACTUAL FEATURES FROM RECENT RUNS ==========
-                # These are the REAL features that appeared in model training
-                'GG.Q.Value', 'PG.PEP', 'PG.Q.Value', 'aa_count_C', 'aa_freq_C',
-                'Global.PG.Q.Value', 'PEP', 'zscore_Precursor.Quantity', 'Precursor.Charge',
-                'aa_count_K', 'Q.Value', 'Genes.MaxLFQ', 'log_Precursor.Charge',
-                'aa_count_R', 'Global.Q.Value', 'PG.MaxLFQ', 'sequence_length',
-                'log_Precursor.Quantity', 'aa_count_H', 'aa_freq_H', 'Genes.MaxLFQ.Unique',
-                'Protein.Q.Value', 'aa_freq_K', 'RT', 'log_Ms1.Area', 'aa_count_M',
-                'Proteotypic', 'Ms1.Profile.Corr', 'iRT', 'Genes.MaxLFQ.Unique.Quality',
-                'Global.Peptidoform.Q.Value', 'aa_freq_M', 'aa_freq_R', 'Predicted.RT',
-                'Precursor.Lib.Index', 'Quantity.Quality', 'Ms1.Normalised', 'PG.MaxLFQ.Quality',
-                'aa_count_E', 'Precursor.Mz', 'RT.Start', 'iIM', 'aa_freq_P', 'RT.Stop',
-                'aa_count_P', 'Ms1.Apex.Mz.Delta', 'Precursor.Quantity', 'Best.Fr.Mz.Delta',
-                'Mass.Evidence', 'Ms1.Area', 'aa_freq_E', 'Evidence', 'Predicted.iRT',
-                'Precursor.Normalised', 'aa_freq_D', 'Ms1.Apex.Area', 'FWHM', 'Best.Fr.Mz',
-                'Genes.MaxLFQ.Quality', 'Ms1.Total.Signal.After', 'Channel.Evidence',
-                'Ms1.Total.Signal.Before', 'aa_count_D', 'source_fdr', 'zscore_Ms1.Area',
-                'PG.TopN', 'Channel.Q.Value', 'Translated.Q.Value', 'Lib.PTM.Site.Confidence',
-                'PTM.Site.Confidence', 'Lib.Peptidoform.Q.Value', 'Peptidoform.Q.Value',
-                'Lib.Q.Value', 'Lib.PG.Q.Value', 'Normalisation.Noise', 'Empirical.Quality',
-                'Normalisation.Factor', 'Genes.TopN', 'Predicted.iIM', 'Decoy', 'Predicted.IM',
-                'IM', 'Run.Index',
-                
-                # ========== COMPLETE AMINO ACID FEATURES ==========
-                # All 20 amino acids - counts and frequencies
-                'aa_count_A', 'aa_count_C', 'aa_count_D', 'aa_count_E', 'aa_count_F',
-                'aa_count_G', 'aa_count_H', 'aa_count_I', 'aa_count_K', 'aa_count_L',
-                'aa_count_M', 'aa_count_N', 'aa_count_P', 'aa_count_Q', 'aa_count_R',
-                'aa_count_S', 'aa_count_T', 'aa_count_V', 'aa_count_W', 'aa_count_Y',
-                'aa_freq_A', 'aa_freq_C', 'aa_freq_D', 'aa_freq_E', 'aa_freq_F',
-                'aa_freq_G', 'aa_freq_H', 'aa_freq_I', 'aa_freq_K', 'aa_freq_L',
-                'aa_freq_M', 'aa_freq_N', 'aa_freq_P', 'aa_freq_Q', 'aa_freq_R',
-                'aa_freq_S', 'aa_freq_T', 'aa_freq_V', 'aa_freq_W', 'aa_freq_Y',
-                
-                # ========== Z-SCORE FEATURES ==========
-                'zscore_Ms1.Area', 'zscore_Ms2.Area', 'zscore_Peak.Height', 
-                'zscore_Precursor.Quantity', 'zscore_Precursor.Charge', 'zscore_FWHM',
-                'zscore_Ms1.Apex.Area', 'zscore_Ms1.Profile.Corr', 'zscore_RT',
-                'zscore_iRT', 'zscore_Predicted.RT', 'zscore_Precursor.Mz',
-                'zscore_Quantity.Quality', 'zscore_Mass.Evidence',
-                
-                # ========== LOG FEATURES ==========
-                'log_GG.Q.Value', 'log_PEP', 'log_Q.Value', 'log_PG.Q.Value', 
-                'log_Global.Q.Value', 'log_Ms1.Area', 'log_Ms2.Area', 'log_Peak.Height',
-                'log_Precursor.Quantity', 'log_Precursor.Charge', 'log_FWHM',
-                'log_Ms1.Apex.Area', 'log_Genes.MaxLFQ', 'log_PG.MaxLFQ',
-                'log_RT', 'log_iRT', 'log_Predicted.RT', 'log_Precursor.Mz',
-                'log_Quantity.Quality', 'log_Mass.Evidence', 'log_Evidence',
-                'log_Proteotypic', 'log_Ms1.Profile.Corr',
-                
-                # ========== RATIO FEATURES ==========
-                'ratio_Ms1.Area_Ms2.Area', 'ratio_Peak.Height_Ms1.Area', 
-                'ratio_Precursor.Quantity_Peak.Height', 'ratio_Ms1.Apex.Area_Ms1.Area',
-                'ratio_FWHM_Peak.Height', 'ratio_Precursor.Charge_Precursor.Mz',
-                'ratio_RT_iRT', 'ratio_RT_Predicted.RT', 'ratio_Ms1.Total.Signal.After_Before',
-                'ratio_Best.Fr.Mz_Precursor.Mz', 'ratio_Ms1.Apex.Mz.Delta_Precursor.Mz',
-                
-                # ========== ADDITIONAL MASS SPEC FEATURES ==========
-                'Ms2.Area', 'Peak.Height', 'Ms1.Translated', 'Ms1.Area.Raw', 'Quantity.Raw',
-                'Fragment.Quant.Raw', 'Fragment.Quant.Corrected', 'Ms2.Scan',
-                'Ion.Mobility', 'CCS', 'Charge', 'Index.RT',
-                
-                # ========== ADDITIONAL DIA-NN COLUMNS ==========
-                'Precursor.Id', 'Protein.Group', 'Protein.Ids', 'Protein.Names',
-                'Genes', 'Modified.Sequence', 'Stripped.Sequence', 'Fragment.Info',
-                'First.Protein.Description', 'Shared.Count', 'Razor.Count', 'Unique.Count',
-                
-                # ========== SPECIAL/COMPUTED FEATURES ==========
-                'sequence_hydrophobicity', 'sequence_molecular_weight', 'sequence_charge_density',
-                'peptide_complexity_score', 'fragment_pattern_score', 'retention_prediction_error'
-            ]
-            
-            # Remove duplicates and sort
-            all_possible_features = sorted(list(set(all_features)))
-        
+            all_possible_features = sorted(peptidia_features + extended_features)
+            st.caption(f"Showing {len(all_possible_features)} features (87 base + {len(extended_features)} extended)")
+
         # Multi-select dropdown for feature exclusion
         excluded_feature_list = st.multiselect(
             "Select Features to Exclude",
             options=all_possible_features,
             default=[],
-            help="Select any features you want to exclude from the model training. "
-                 "Features are grouped by category above - use this for fine-grained control.",
+            help="Select any features you want to exclude from the model training.",
             placeholder="Choose features to exclude..."
         )
     
@@ -2462,6 +2439,7 @@ def show_training_interface():
                     calibration_method=calibration_method,
                     model_type=model_type,
                     feature_selection={
+                        'feature_mode': feature_mode,
                         'use_diann_quality': use_diann_quality,
                         'use_sequence_features': use_sequence_features,
                         'use_ms_features': use_ms_features,
@@ -2508,6 +2486,7 @@ def show_training_interface():
                 'calibration_method': calibration_method,
                 'aggregation_method': aggregation_method,
                 'feature_selection': {
+                    'feature_mode': feature_mode,
                     'use_diann_quality': use_diann_quality,
                     'use_sequence_features': use_sequence_features,
                     'use_ms_features': use_ms_features,
@@ -4132,6 +4111,7 @@ def display_export_options(results, include_general_exports: bool = True):
             - Subsample: {config.get('xgb_params', {}).get('subsample', 0.8)}
             
             **Feature Selection:**
+            - Feature Mode: {feature_selection.get('feature_mode', 'peptidia').upper()} ({'87 features' if feature_selection.get('feature_mode', 'peptidia') == 'peptidia' else 'extended'})
             - DIA-NN Quality Metrics: {'✅' if feature_selection.get('use_diann_quality', False) else '❌'}
             - Peptide Sequence Features: {'✅' if feature_selection.get('use_sequence_features', False) else '❌'}
             - Mass Spectrometry Features: {'✅' if feature_selection.get('use_ms_features', False) else '❌'}
