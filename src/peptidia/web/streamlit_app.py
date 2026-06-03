@@ -274,7 +274,7 @@ st.markdown("""
         text-shadow: none !important;
     }
     
-    /* Multiselect button styling - for FDR level buttons */
+    /* Multiselect button styling - for RDR level buttons */
     .stMultiSelect > div > div > div > div > button,
     [data-testid="stMultiSelect"] button,
     .st-multiselect-item,
@@ -593,7 +593,7 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     if not results or 'config' not in results:
         raise ValueError("No results/config available to build filtered DIA-NN CSV")
 
-    # Resolve result item and threshold, using nearest-FDR match (robust to strings like "5.0%")
+    # Resolve result item and threshold, using nearest-RDR match (robust to strings like "5.0%")
     def _parse_fdr(v):
         try:
             # Handles numeric, string, and strings with trailing %
@@ -605,7 +605,7 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     results_list = results.get('results', []) or []
     if target_fdr is not None and results_list:
         tf = float(target_fdr)
-        # Choose the result with minimal absolute difference in FDR
+        # Choose the result with minimal absolute difference in RDR
         parsed = [(_parse_fdr(r.get('Target_FDR')), r) for r in results_list]
         parsed = [(f, r) for f, r in parsed if f is not None]
         if parsed:
@@ -742,7 +742,7 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
     # 5) Load original DIA-NN test files to filter
     test_files = get_files_for_configured_method(test_method, test_fdr)
     if not test_files:
-        raise ValueError(f"No DIA-NN files found for {test_method} at FDR {test_fdr}")
+        raise ValueError(f"No DIA-NN files found for {test_method} at RDR {test_fdr}")
 
     frames = []
     for fp in sorted(test_files):
@@ -776,10 +776,10 @@ def build_filtered_diann_dataframe(results: dict, target_fdr: float | None = Non
 
 
 def display_diann_filtered_export(results):
-    """Minimal UI: one control to choose FDR and one Excel export (Results + Metadata)."""
+    """Minimal UI: one control to choose RDR and one Excel export (Results + Metadata)."""
     st.markdown("### 🧪 DIA-NN Filtered Export")
 
-    # FDR options from results
+    # RDR options from results
     targets = []
     if 'results' in results and results['results']:
         try:
@@ -794,10 +794,10 @@ def display_diann_filtered_export(results):
         default_idx = targets.index(best['best_fdr'])
 
     selection = st.selectbox(
-        "Target FDR for additional peptides",
+        "Target RDR for additional peptides",
         [f"{t:.1f}" for t in targets] if targets else ["5.0"],
         index=default_idx if targets else 0,
-        help="Exports baseline 1% + ML-selected additional peptides at this FDR"
+        help="Exports baseline 1% + ML-selected additional peptides at this RDR"
     )
 
     def _build_metadata_df(selected_fdr: float):
@@ -807,12 +807,12 @@ def display_diann_filtered_export(results):
         rows.extend([
             ("PeptiDIA", "v1.0"),
             ("Exported", datetime.now().isoformat()),
-            ("Selected Target FDR", selected_fdr),
+            ("Selected Target RDR", selected_fdr),
             ("Train Methods", ", ".join(cfg.get('train_methods', []))),
-            ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+            ("Train RDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
             ("Test Method", cfg.get('test_method')),
-            ("Test FDR", cfg.get('test_fdr')),
-            ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+            ("Test RDR", cfg.get('test_fdr')),
+            ("Target RDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
             ("Aggregation Method", cfg.get('aggregation_method', 'max')),
         ])
         xgb = cfg.get('xgb_params', {}) or {}
@@ -856,7 +856,7 @@ def display_diann_filtered_export(results):
                     filtered_df.to_excel(writer, index=False, sheet_name="Results")
                     _build_metadata_df(tfdr).to_excel(writer, index=False, sheet_name="Metadata")
                 st.download_button(
-                    label=f"Save diann_export_{tfdr:.1f}FDR.xlsx",
+                    label=f"Save diann_export_{tfdr:.1f}RDR.xlsx",
                     data=buffer.getvalue(),
                     file_name=f"diann_export_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -904,11 +904,11 @@ def discover_available_files():
     data/
     ├── [DATASET_NAME]/                    # e.g., MyDataset, ExperimentA, etc.
     │   ├── short_gradient/                # Training data (fast gradient)
-    │   │   ├── FDR_1/                    # BASELINE files (1% FDR)
-    │   │   ├── FDR_20/                   # TRAINING files (20% FDR)
-    │   │   └── FDR_50/                   # TRAINING files (50% FDR)
+    │   │   ├── FDR_1/                    # BASELINE files (1% RDR)
+    │   │   ├── FDR_20/                   # TRAINING files (20% RDR)
+    │   │   └── FDR_50/                   # TRAINING files (50% RDR)
     │   └── long_gradient/                 # Ground truth (slow gradient)
-    │       └── FDR_1/                    # GROUND TRUTH files (1% FDR)
+    │       └── FDR_1/                    # GROUND TRUTH files (1% RDR)
     """
     data_dir = "data"
     
@@ -1163,7 +1163,7 @@ def discover_datasets_for_setup(config, results, runtime_minutes):
                                     datasets_info[dataset_name]['baseline'][method] = []
                                 datasets_info[dataset_name]['baseline'][method].append(file_info)
                             else:
-                                # Training files (FDR 20, 50)
+                                # Training files (RDR 20, 50)
                                 fdr_key = str(fdr)
                                 if method not in datasets_info[dataset_name]['training'][fdr_key]:
                                     datasets_info[dataset_name]['training'][fdr_key][method] = []
@@ -1184,14 +1184,14 @@ def extract_method_from_filename(filename, dataset_name=None):
     """Universal method extraction that treats every file as unique.
     
     NO hardcoding for any specific dataset. Each file gets its own unique method name
-    based on the full filename (minus extension and FDR suffix).
+    based on the full filename (minus extension and RDR suffix).
     This ensures maximum compatibility with any naming convention.
     """
     import re
     
     # Remove file extension and common suffixes
     base_name = filename.replace('.parquet', '').replace('.csv', '').replace('.tsv', '')
-    base_name = re.sub(r'_FDR\d+$', '', base_name)  # Remove FDR suffix
+    base_name = re.sub(r'_FDR\d+$', '', base_name)  # Remove RDR suffix
     
     # Universal approach: Use the full cleaned filename as the method name
     # This ensures every file gets a unique identity regardless of naming convention
@@ -1273,13 +1273,13 @@ def display_run_history():
                 # Enhanced run information
                 st.markdown(f"**🕐 Time**: {run['timestamp'][:19].replace('T', ' ')}")
                 st.markdown(f"**🏋️ Train**: {', '.join(run['config']['train_methods'])}")
-                st.markdown(f"**🧪 Test**: {run['config']['test_method']} @ {run['config']['test_fdr']}% FDR")
+                st.markdown(f"**🧪 Test**: {run['config']['test_method']} @ {run['config']['test_fdr']}% RDR")
                 st.markdown(f"**⏱️ Runtime**: {run['summary']['runtime_minutes']:.1f} min")
                 
                 # Performance metrics
                 best_peptides = int(run['summary']['best_peptides']) if run['summary']['best_peptides'] else 0
                 if best_peptides > 0:
-                    st.markdown(f"**🎯 Best**: {run['summary']['best_peptides']} peptides @ {run['summary']['best_fdr']:.1f}% FDR")
+                    st.markdown(f"**🎯 Best**: {run['summary']['best_peptides']} peptides @ {run['summary']['best_fdr']:.1f}% RDR")
                     
                     # Additional metrics if available
                     if 'baseline_peptides' in run['summary']:
@@ -1393,13 +1393,13 @@ def process_run_comparison_data(selected_run_ids):
             'Run ID': run['run_id'],
             'Timestamp': run['timestamp'][:19].replace('T', ' '),
             'Training Methods': ', '.join(config['train_methods']),
-            'Training FDR': ', '.join(map(str, config.get('train_fdr_levels', []))) + '%',
+            'Training RDR': ', '.join(map(str, config.get('train_fdr_levels', []))) + '%',
             'Test Method': config['test_method'],
-            'Test FDR': f"{config['test_fdr']}%",
+            'Test RDR': f"{config['test_fdr']}%",
             'Baseline Peptides': f"{get_baseline_peptides(run):,}" if get_baseline_peptides(run) else "N/A",
             'Runtime (min)': f"{summary['runtime_minutes']:.1f}",
             'Best Peptides': int(summary['best_peptides']),
-            'Best FDR': f"{summary['best_fdr']:.1f}%",
+            'Best RDR': f"{summary['best_fdr']:.1f}%",
             'Best MCC': f"{best_mcc:.3f}" if best_mcc else "N/A",
         })
     
@@ -1441,7 +1441,7 @@ def display_run_comparison():
     # Performance comparison charts
     st.markdown("### 📈 Performance Comparison")
 
-    # Prepare data for grouped bar charts by FDR level
+    # Prepare data for grouped bar charts by RDR level
     fdr_comparison_data = []
     mcc_comparison_data = []
 
@@ -1451,22 +1451,22 @@ def display_run_comparison():
             run_id = run['run_id']
 
             for result in results:
-                # Additional Peptides by FDR
+                # Additional Peptides by RDR
                 fdr_comparison_data.append({
                     'Run ID': run_id,
-                    'Target FDR (%)': result.get('Target_FDR', 0),
+                    'Target RDR (%)': result.get('Target_FDR', 0),
                     'Additional Peptides': result.get('Additional_Peptides', 0)
                 })
 
-                # MCC by FDR (if available)
+                # MCC by RDR (if available)
                 if 'MCC' in result and result['MCC'] not in [None, 'N/A', 0]:
                     mcc_comparison_data.append({
                         'Run ID': run_id,
-                        'Target FDR (%)': result.get('Target_FDR', 0),
+                        'Target RDR (%)': result.get('Target_FDR', 0),
                         'MCC': result.get('MCC', 0)
                     })
 
-    # Chart 1: Additional Peptides by FDR Level (grouped bar chart)
+    # Chart 1: Additional Peptides by RDR Level (grouped bar chart)
     if fdr_comparison_data:
         fdr_df = pd.DataFrame(fdr_comparison_data)
 
@@ -1486,11 +1486,11 @@ def display_run_comparison():
 
         fig_peptides = px.bar(
             fdr_df,
-            x='Target FDR (%)',
+            x='Target RDR (%)',
             y='Additional Peptides',
             color='Run ID',
             barmode='group',
-            title='Additional Peptides Recovered by FDR Level',
+            title='Additional Peptides Recovered by RDR Level',
             color_discrete_sequence=comparison_colors
         )
         fig_peptides.update_layout(
@@ -1498,15 +1498,15 @@ def display_run_comparison():
             paper_bgcolor='white',
             font=dict(family="Inter", size=12),
             height=600,
-            xaxis_title='Target FDR (%)',
+            xaxis_title='Target RDR (%)',
             yaxis_title='Additional Peptides',
             legend_title='Model',
-            bargap=0.15,  # Gap between groups of bars (FDR levels)
+            bargap=0.15,  # Gap between groups of bars (RDR levels)
             bargroupgap=0.05  # Gap between bars within a group (models)
         )
         st.plotly_chart(fig_peptides, use_container_width=True)
 
-    # Chart 2: MCC by FDR Level (grouped bar chart)
+    # Chart 2: MCC by RDR Level (grouped bar chart)
     if mcc_comparison_data:
         mcc_df = pd.DataFrame(mcc_comparison_data)
 
@@ -1526,11 +1526,11 @@ def display_run_comparison():
 
         fig_mcc = px.bar(
             mcc_df,
-            x='Target FDR (%)',
+            x='Target RDR (%)',
             y='MCC',
             color='Run ID',
             barmode='group',
-            title='MCC (Model Quality) by FDR Level',
+            title='MCC (Model Quality) by RDR Level',
             color_discrete_sequence=comparison_colors
         )
         fig_mcc.update_layout(
@@ -1538,11 +1538,11 @@ def display_run_comparison():
             paper_bgcolor='white',
             font=dict(family="Inter", size=12),
             height=600,
-            xaxis_title='Target FDR (%)',
+            xaxis_title='Target RDR (%)',
             yaxis_title='MCC',
             legend_title='Model',
             yaxis_range=[-0.1, 1.0],
-            bargap=0.15,  # Gap between groups of bars (FDR levels)
+            bargap=0.15,  # Gap between groups of bars (RDR levels)
             bargroupgap=0.05  # Gap between bars within a group (models)
         )
         st.plotly_chart(fig_mcc, use_container_width=True)
@@ -1840,7 +1840,7 @@ def show_training_interface():
     filtered_ground_truth = filter_files_by_dataset(files_info['ground_truth'], dataset_filter)
     filtered_training = filter_files_by_dataset(files_info['training'], dataset_filter)
     
-    # Baseline files (Fast gradient 1% FDR) - optimized rendering
+    # Baseline files (Fast gradient 1% RDR) - optimized rendering
     if filtered_baseline:
         filter_text = f" ({dataset_filter})" if dataset_filter != 'All' else ""
         with st.sidebar.expander(f"🚀 Baseline Files{filter_text} - {len(filtered_baseline)} files", expanded=False):
@@ -1848,11 +1848,11 @@ def show_training_interface():
             display_files = filtered_baseline[:5]
             for file_info in display_files:
                 dataset_icon = "📊"  # Generic dataset icon
-                st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • FDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
+                st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • RDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
             if len(filtered_baseline) > 5:
                 st.markdown(f"*... and {len(filtered_baseline) - 5} more baseline files*")
     
-    # Ground truth files (Slow gradient 1% FDR) - optimized rendering
+    # Ground truth files (Slow gradient 1% RDR) - optimized rendering
     if filtered_ground_truth:
         filter_text = f" ({dataset_filter})" if dataset_filter != 'All' else ""
         with st.sidebar.expander(f"🐌 Ground Truth Files{filter_text} - {len(filtered_ground_truth)} files", expanded=False):
@@ -1864,7 +1864,7 @@ def show_training_interface():
             if len(filtered_ground_truth) > 5:
                 st.markdown(f"*... and {len(filtered_ground_truth) - 5} more ground truth files*")
     
-    # Training files (Fast gradient multiple FDR levels) - optimized rendering
+    # Training files (Fast gradient multiple RDR levels) - optimized rendering
     if filtered_training:
         filter_text = f" ({dataset_filter})" if dataset_filter != 'All' else ""
         with st.sidebar.expander(f"⚙️ Training Files{filter_text} - {len(filtered_training)} files", expanded=False):
@@ -1872,7 +1872,7 @@ def show_training_interface():
             display_files = filtered_training[:5]
             for file_info in display_files:
                 dataset_icon = "📊"  # Generic dataset icon
-                st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • FDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
+                st.markdown(f"**{file_info['filename']}**\n• Dataset: {dataset_icon} {file_info.get('dataset', 'Unknown')} • Method: {file_info['method']} • RDR: {file_info['fdr']}% • Size: {file_info['size_mb']:.1f} MB")
             if len(filtered_training) > 5:
                 st.markdown(f"*... and {len(filtered_training) - 5} more training files*")
     
@@ -1899,12 +1899,12 @@ def show_training_interface():
         help="Choose MS methods for training (each matched to its ground truth for proper labeling)"
     )
     
-    # Training FDR levels
+    # Training RDR levels
     train_fdrs = st.sidebar.multiselect(
-        "Training FDR Levels (%)",
+        "Training RDR Levels (%)",
         options=[1, 20, 50],
         default=[50],
-        help="FDR levels to include in training data"
+        help="RDR levels to include in training data"
     )
     
     st.sidebar.markdown("### 🎯 Testing Configuration")
@@ -1951,21 +1951,21 @@ def show_training_interface():
         st.sidebar.error("🚫 **Error**: Test method cannot be the same as a training method!")
         test_method = None
     
-    # Test FDR level
+    # Test RDR level
     test_fdr = st.sidebar.selectbox(
-        "Test FDR Level (%)",
+        "Test RDR Level (%)",
         options=[20, 50],
         index=1,  # Default to 50%
-        help="FDR level for test data (higher = more candidates)"
+        help="RDR level for test data (higher = more candidates)"
     )
     
-    # Target FDR levels
-    st.sidebar.markdown("### 🎯 Target FDR Levels")
+    # Target RDR levels
+    st.sidebar.markdown("### 🎯 Target RDR Levels")
     target_fdrs = st.sidebar.multiselect(
-        "Target FDR Levels (%)",
+        "Target RDR Levels (%)",
         options=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0],
         default=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0],
-        help="FDR levels to optimize for in results (select more for broader analysis)"
+        help="RDR levels to optimize for in results (select more for broader analysis)"
     )
     
     # Model Type - K-Sweep XGBoost is the only model (proven best performance)
@@ -2148,7 +2148,7 @@ def show_training_interface():
     
     if not target_fdrs:
         config_valid = False
-        validation_messages.append("❌ Select at least one target FDR level")
+        validation_messages.append("❌ Select at least one target RDR level")
     
     # Display validation status
     if validation_messages:
@@ -2194,10 +2194,10 @@ def show_training_interface():
         # Configuration details in a clean format
         config_summary = {
             "Training Methods": ", ".join(train_methods) if train_methods else "None selected",
-            "Training FDR Levels": ", ".join(map(str, train_fdrs)) + "%" if train_fdrs else "None selected",
+            "Training RDR Levels": ", ".join(map(str, train_fdrs)) + "%" if train_fdrs else "None selected",
             "Test Method (Holdout)": test_method or "None selected",
-            "Test FDR Level": f"{test_fdr}%" if test_fdr else "None selected",
-            "Target FDR Levels": ", ".join(map(str, target_fdrs)) + "%" if target_fdrs else "None selected"
+            "Test RDR Level": f"{test_fdr}%" if test_fdr else "None selected",
+            "Target RDR Levels": ", ".join(map(str, target_fdrs)) + "%" if target_fdrs else "None selected"
         }
         
         # Display config in columns for better layout
@@ -2519,15 +2519,15 @@ def extract_summary_metrics(results_data):
         return None
     
     # Find best result using smarter selection logic
-    # Priority: 1) FDR ≤ 15%, 2) Highest peptides, 3) If no good FDR, best peptides with reasonable FDR
+    # Priority: 1) RDR ≤ 15%, 2) Highest peptides, 3) If no good RDR, best peptides with reasonable RDR
     valid_low_fdr = [r for r in results_data['results'] if r['Actual_FDR'] <= 15.0 and int(r['Additional_Peptides']) > 0]
     valid_medium_fdr = [r for r in results_data['results'] if r['Actual_FDR'] <= 30.0 and int(r['Additional_Peptides']) > 0]
     
     if valid_low_fdr:
-        # Best case: good FDR and peptides
+        # Best case: good RDR and peptides
         best_result = max(valid_low_fdr, key=lambda x: int(x['Additional_Peptides']))
     elif valid_medium_fdr:
-        # Fallback: reasonable FDR, prioritize balance of FDR and peptides
+        # Fallback: reasonable RDR, prioritize balance of RDR and peptides
         best_result = max(valid_medium_fdr, key=lambda x: int(x['Additional_Peptides']) / (1 + x['Actual_FDR']))
     else:
         # Last resort: any result with peptides
@@ -2593,7 +2593,7 @@ def create_feature_descriptions():
         'iRT': 'Indexed retention time (normalized RT)',
         'Predicted.RT': 'Predicted retention time from library',
         'Predicted.iRT': 'Predicted indexed retention time',
-        'Q.Value': 'FDR-adjusted q-value for identification confidence',
+        'Q.Value': 'Q-value for identification confidence',
         'PEP': 'Posterior error probability',
         'Global.Q.Value': 'Global q-value across entire dataset',
         'Protein.Q.Value': 'Protein-level q-value',
@@ -2610,7 +2610,7 @@ def create_feature_descriptions():
         'File.Name': 'Source data file name',
         'Run': 'Experimental run identifier',
         'Experiment': 'Experiment name or condition',
-        'source_fdr': 'FDR level of the source data file',
+        'source_fdr': 'Search threshold level of the source data file',
         
         # Engineered Features
         'sequence_length': 'Length of the peptide sequence (engineered)',
@@ -2928,28 +2928,18 @@ def display_feature_importance_tab(results_dir: str):
                 else:
                     st.info("SHAP data could not be visualized for this run.")
 
-        elif os.path.exists(shap_beeswarm_path) or os.path.exists(shap_bar_path):
-            st.markdown("####  SHAP Feature Importance Analysis (Static)")
+        elif os.path.exists(shap_beeswarm_path):
+            st.markdown("#### 🐝 SHAP Beeswarm Summary")
+            st.markdown("*How each feature pushes a peptide toward (right) or away from (left) being called real.*")
+            st.image(shap_beeswarm_path, use_container_width=True)
 
-            col1, col2 = st.columns(2)
-
-            with col1:
-                if os.path.exists(shap_beeswarm_path):
-                    st.markdown("**SHAP Beeswarm Summary Plot**")
-                    st.image(shap_beeswarm_path, use_container_width=True)
-                else:
-                    st.info("SHAP beeswarm plot not available")
-
-            with col2:
-                if os.path.exists(shap_bar_path):
-                    st.markdown("**SHAP Feature Importance**")
-                    st.image(shap_bar_path, use_container_width=True)
-                else:
-                    st.info("SHAP bar plot not available")
-
+    fi_top20_path = os.path.join(feature_analysis_dir, "feature_importance_top20.png")
     if not csv_available:
-        st.info("🔍 Feature importance data is not available for this run.")
-        st.markdown("**Note**: Feature importance analysis is generated during model training and may not be available for all analysis types.")
+        if os.path.exists(fi_top20_path):
+            st.markdown("#### 📊 Top 20 Most Important Features")
+            st.image(fi_top20_path, use_container_width=True)
+        else:
+            st.info("🔍 Feature importance data is not available for this run.")
     else:
         try:
             # Load feature importance data with caching
@@ -3220,9 +3210,40 @@ def display_feature_importance_tab(results_dir: str):
         render_shap_section()
 
 
+def display_share_configuration(results):
+    """Show a shareable summary of the analysis configuration (no file export)."""
+    if 'config' not in results:
+        return
+    config = results['config']
+    test_method = config.get('test_method', '')
+    test_fdr = config.get('test_fdr', 50)
+    train_methods = config.get('train_methods', [])
+    train_fdr_levels = config.get('train_fdr_levels', [])
+
+    st.markdown("### 📧 Share Configuration")
+    st.markdown("**Share this analysis configuration:**")
+    config_string = (
+        f"Training: {', '.join(train_methods)} "
+        f"(RDR: {', '.join(map(str, train_fdr_levels))}%) "
+        f"→ Testing: {test_method} (RDR: {test_fdr}%)"
+    )
+    st.code(config_string)
+
+    with st.expander("🔄 Recreate This Analysis"):
+        fs = config.get('feature_selection', {})
+        st.markdown(f"""
+        1. **Training Methods**: {', '.join(train_methods)}
+        2. **Training RDR Levels**: {', '.join(map(str, train_fdr_levels))}%
+        3. **Test Method**: {test_method}
+        4. **Test RDR Level**: {test_fdr}%
+        5. **Target RDR Levels**: {', '.join(map(str, config.get('target_fdr_levels', [])))}%
+        6. **Feature Mode**: {fs.get('feature_mode', 'peptidia')}
+        """)
+
+
 def display_results():
     """Display analysis results with interactive visualizations."""
-    
+
     st.markdown("## 🎉 Analysis Results")
     
     # Extract summary metrics from real results
@@ -3243,7 +3264,7 @@ def display_results():
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% FDR)")
+            st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% RDR)")
             st.markdown(f"**Method:** {summary['best_method']}")
             
             # Get actual configured files for baseline if available
@@ -3259,7 +3280,7 @@ def display_results():
             st.markdown(f"**Total unique peptides:** {summary['baseline_peptides']:,}")
             st.info("High-confidence peptides identified by DIA-NN in short gradient conditions")
             
-            st.markdown("#### 🌍 Ground Truth (Long Gradient 1% FDR)")
+            st.markdown("#### 🌍 Ground Truth (Long Gradient 1% RDR)")
             
             # Show method-specific ground truth based on configuration
             config = results.get('config', {})
@@ -3310,8 +3331,8 @@ def display_results():
             total_unique_in_test_files = baseline_peptides + additional_candidates
             
             st.markdown(f"**Test method:** {summary['best_method']}")
-            st.markdown(f"**Test FDR level:** {results['config'].get('test_fdr', 50)}%")
-            st.markdown(f"**Total unique peptides in {results['config'].get('test_fdr', 50)}% FDR files:** {total_unique_in_test_files:,}")
+            st.markdown(f"**Test RDR level:** {results['config'].get('test_fdr', 50)}%")
+            st.markdown(f"**Total unique peptides in {results['config'].get('test_fdr', 50)}% RDR files:** {total_unique_in_test_files:,}")
             st.markdown(f"**Baseline peptides:** {baseline_peptides:,}")
             st.markdown(f"**Additional candidates remaining:** {additional_candidates:,}")
             st.markdown(f"**Additional test rows:** {test_set_total:,}")
@@ -3349,8 +3370,8 @@ def display_results():
         st.error("❌ No detailed results available")
         return
     
-    # Tabs for different views (including Feature Importance)
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Overview", "📈 Detailed Plots", "📋 Data Tables", "📊 Feature Importance", "💾 Export"])
+    # Tabs for different views (results are auto-saved to the run folder; no manual export)
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Overview", "📈 Detailed Plots", "📋 Data Tables", "📊 Feature Importance"])
     
     with tab1:
         display_overview_plots(results_df)
@@ -3369,10 +3390,10 @@ def display_results():
         else:
             st.info("No results directory found – cannot display feature importance plots.")
     
-    with tab5:
-        # Use the richer export panel with CSV/JSON/config plus DIA-NN export
-        display_export_options(results)
-    
+    # Share configuration (results are auto-saved; this is just a shareable summary)
+    st.markdown("---")
+    display_share_configuration(results)
+
     # Reset button
     st.markdown("---")
     st.markdown("### 🔄 Start Over")
@@ -3391,16 +3412,16 @@ def display_overview_plots(df):
     
     with col1:
         if is_discovery_mode:
-            # Discovery mode: show discovered peptides vs FDR level
+            # Discovery mode: show discovered peptides vs RDR level
             fig = px.line(df, x='Target_FDR', y='Additional_Peptides', 
-                         title='🔬 Discovered Peptides by FDR Level',
+                         title='🔬 Discovered Peptides by RDR Level',
                          color_discrete_sequence=[CHART_COLORS['line_primary']])
-            fig.update_xaxes(title="Target FDR Level (%)")
+            fig.update_xaxes(title="Target RDR Level (%)")
             fig.update_yaxes(title="Discovered Peptides")
         else:
-            # Validation mode: normal FDR vs Additional Peptides
+            # Validation mode: normal RDR vs Additional Peptides
             fig = px.line(df, x='Target_FDR', y='Additional_Peptides', 
-                         title='FDR vs Additional Peptides',
+                         title='RDR vs Additional Peptides',
                          color_discrete_sequence=[CHART_COLORS['line_primary']])
         
         fig.update_traces(mode='lines+markers', line=dict(width=3), marker=dict(size=8))
@@ -3420,9 +3441,9 @@ def display_overview_plots(df):
         if is_discovery_mode:
             # Discovery mode: show prediction confidence distribution
             fig = px.bar(df, x='Target_FDR', y='Threshold',
-                        title='🎯 Model FDR Thresholds',
+                        title='🎯 Model RDR Thresholds',
                         color_discrete_sequence=[CHART_COLORS['bar_primary']])
-            fig.update_xaxes(title="Target FDR Level (%)")
+            fig.update_xaxes(title="Target RDR Level (%)")
             fig.update_yaxes(title="Prediction Threshold")
             fig.update_layout(
                 plot_bgcolor='white',
@@ -3433,13 +3454,13 @@ def display_overview_plots(df):
                 margin=dict(l=50, r=20, t=60, b=50)
             )
         else:
-            # Validation mode: normal FDR control plot
+            # Validation mode: normal RDR control plot
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=df['Target_FDR'], 
                 y=df['Actual_FDR'],
                 mode='lines+markers',
-                name='Actual FDR',
+                name='Actual RDR',
                 line=dict(color=CHART_COLORS['line_secondary'], width=3),
                 marker=dict(size=8)
             ))
@@ -3451,9 +3472,9 @@ def display_overview_plots(df):
                 line=dict(color=CHART_COLORS['line_target'], width=2, dash='dash')
             ))
             fig.update_layout(
-                title='FDR Control Precision',
-                xaxis_title='Target FDR (%)',
-                yaxis_title='Actual FDR (%)',
+                title='RDR Control Precision',
+                xaxis_title='Target RDR (%)',
+                yaxis_title='Actual RDR (%)',
                 plot_bgcolor='white',
                 paper_bgcolor='white',
                 font=dict(family="Inter", size=12),
@@ -3475,7 +3496,7 @@ def display_detailed_plots(df):
     if is_discovery_mode:
         # Discovery mode: show only relevant plots
         fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
-                    title='🔬 Discovered Peptides by FDR Level',
+                    title='🔬 Discovered Peptides by RDR Level',
                     orientation='v',
                     color_discrete_sequence=[CHART_COLORS['bar_primary']])
         
@@ -3488,7 +3509,7 @@ def display_detailed_plots(df):
             margin=dict(l=60, r=30, t=80, b=60),
             xaxis=dict(
                 gridcolor='lightgray',
-                title='Target FDR Level (%)'
+                title='Target RDR Level (%)'
             ),
             yaxis=dict(
                 gridcolor='lightgray',
@@ -3511,9 +3532,9 @@ def display_detailed_plots(df):
     else:
         # Validation mode: show both plots
         
-        # Bar chart of additional peptides by target FDR
+        # Bar chart of additional peptides by target RDR
         fig = px.bar(df, x='Target_FDR', y='Additional_Peptides',
-                    title='Additional Peptides by Target FDR',
+                    title='Additional Peptides by Target RDR',
                     orientation='v',  # Explicitly set vertical orientation
                     color_discrete_sequence=[CHART_COLORS['bar_primary']])
         
@@ -3526,7 +3547,7 @@ def display_detailed_plots(df):
             margin=dict(l=60, r=30, t=80, b=60),  # Better margins for sidebar layout
             xaxis=dict(
                 gridcolor='lightgray',
-                title='Target FDR (%)'
+                title='Target RDR (%)'
             ),
             yaxis=dict(
                 gridcolor='lightgray',
@@ -3549,7 +3570,7 @@ def display_detailed_plots(df):
             title_font_size=16,
             height=500,  # Fixed height for better appearance with sidebar
             margin=dict(l=60, r=30, t=120, b=60),  # Extra top margin for annotation
-            xaxis=dict(gridcolor='lightgray', title='Target FDR (%)'),
+            xaxis=dict(gridcolor='lightgray', title='Target RDR (%)'),
             yaxis=dict(gridcolor='lightgray', title='Recovery Percentage (%)'),
             annotations=[
                 dict(
@@ -3571,10 +3592,10 @@ def display_data_tables(df):
     # Add context explanation
     st.info("""
     **📊 Column Explanations (left to right):**
-    • **Target FDR**: Desired false discovery rate threshold
+    • **Target RDR**: Desired reference-discordance rate threshold
     • **Threshold**: Model confidence threshold used for predictions
     • **Validated Additional Peptides (TP)**: Additional peptides validated by ground truth (true positives only)
-    • **Actual FDR**: Measured false discovery rate of additional peptides
+    • **Actual RDR**: Measured reference-discordance rate of additional peptides
     • **Recovery %**: Percentage of validated candidates successfully recovered
     • **Increase %**: Improvement over baseline peptide count
     • **False Positives**: Model predictions not validated by ground truth
@@ -3584,8 +3605,8 @@ def display_data_tables(df):
     # Format the dataframe for display
     display_df = df.copy()
     
-    # Remove internal columns from display 
-    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates', 'Selected_Sequences']
+    # Remove internal columns from display
+    columns_to_remove = ['Aggregation_Method', 'Total_Validated_Candidates', 'Selected_Sequences', 'Threshold_Source']
     for col in columns_to_remove:
         if col in display_df.columns:
             display_df = display_df.drop(col, axis=1)
@@ -3603,11 +3624,11 @@ def display_data_tables(df):
         display_df,
         use_container_width=True,
         column_config={
-            "Target_FDR": st.column_config.TextColumn("Target FDR", help="Desired false discovery rate"),
+            "Target_FDR": st.column_config.TextColumn("Target RDR", help="Desired reference-discordance rate"),
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
             "Additional_Peptides": st.column_config.NumberColumn("Validated Additional Peptides (TP)", help="Validated additional peptides (true positives only)"),
             "False_Positives": st.column_config.NumberColumn("False Positives", help="Model predictions not in ground truth"),
-            "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
+            "Actual_FDR": st.column_config.TextColumn("Actual RDR", help="Measured reference-discordance rate of additional peptides"),
             "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient (-1 to +1, higher is better)"),
             "Recovery_Pct": st.column_config.TextColumn("Recovery %", help="% of validated candidates recovered"),
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline")
@@ -3683,7 +3704,7 @@ def display_export_options(results, include_general_exports: bool = True):
                 key="filtered_export_format"
             )
 
-            # Get available target FDR levels
+            # Get available target RDR levels
             targets = []
             if 'results' in results and results['results']:
                 try:
@@ -3691,18 +3712,18 @@ def display_export_options(results, include_general_exports: bool = True):
                 except Exception:
                     targets = []
 
-            # Find default index for 1.0 FDR (or closest)
+            # Find default index for 1.0 RDR (or closest)
             default_idx = 0
             target_strs = [f"{t:.1f}" for t in targets]
             if "1.0" in target_strs:
                 default_idx = target_strs.index("1.0")
 
-            # Target FDR selector
+            # Target RDR selector
             selection = st.selectbox(
-                "Target FDR for export",
+                "Target RDR for export",
                 target_strs,
                 index=default_idx,
-                help="Choose the FDR level for filtered peptides",
+                help="Choose the RDR level for filtered peptides",
                 key="filtered_export_fdr"
             )
 
@@ -3718,10 +3739,10 @@ def display_export_options(results, include_general_exports: bool = True):
                     ("PeptiDIA", "v0.8"),
                     ("Exported", ts),
                     ("Train Methods", ", ".join(cfg.get('train_methods', []))),
-                    ("Train FDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
+                    ("Train RDR Levels", ", ".join(map(str, cfg.get('train_fdr_levels', [])))),
                     ("Test Method", cfg.get('test_method')),
-                    ("Test FDR", cfg.get('test_fdr')),
-                    ("Target FDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
+                    ("Test RDR", cfg.get('test_fdr')),
+                    ("Target RDR Levels", ", ".join(map(str, cfg.get('target_fdr_levels', [])))),
                 ])
                 if is_batch_mode:
                     rows.append(("Batch Mode", "Yes"))
@@ -3785,10 +3806,10 @@ def display_export_options(results, include_general_exports: bool = True):
                                     is_discovery = (results.get('summary', {}) or {}).get('ground_truth_peptides', 1) == 0
                                     
                                     if is_discovery:
-                                        # Discovery mode: minimal columns (no FDR validation possible)
+                                        # Discovery mode: minimal columns (no RDR validation possible)
                                         rename_map = {
                                             'Source_Method': 'Source Method',
-                                            'Target_FDR': 'Target FDR (%)',
+                                            'Target_FDR': 'Target RDR (%)',
                                             'Threshold': 'Threshold',
                                             'Additional_Peptides': 'Discovered Peptides',
                                             'Increase_Pct': 'Increase %',
@@ -3797,11 +3818,11 @@ def display_export_options(results, include_general_exports: bool = True):
                                         # Validation mode: full columns with performance metrics
                                         rename_map = {
                                             'Source_Method': 'Source Method',
-                                            'Target_FDR': 'Target FDR (%)',
+                                            'Target_FDR': 'Target RDR (%)',
                                             'Threshold': 'Threshold',
                                             'Additional_Peptides': 'Additional Peptides',
                                             'False_Positives': 'False Positives',
-                                            'Actual_FDR': 'Actual FDR (%)',
+                                            'Actual_FDR': 'Actual RDR (%)',
                                             'Precision': 'Precision',
                                             'Recovery_Pct': 'Recovery %',
                                             'Increase_Pct': 'Increase %',
@@ -3809,12 +3830,12 @@ def display_export_options(results, include_general_exports: bool = True):
                                         }
                                     cols = [c for c in rename_map.keys() if c in fdr_df.columns]
                                     fdr_df = fdr_df[cols].rename(columns=rename_map)
-                                    if 'Target FDR (%)' in fdr_df.columns:
+                                    if 'Target RDR (%)' in fdr_df.columns:
                                         import numpy as _np
-                                        col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                        col = _pd.to_numeric(fdr_df['Target RDR (%)'], errors='coerce')
                                         col = col.replace([_np.inf, -_np.inf], _np.nan)
-                                        fdr_df['Target FDR (%)'] = col
-                                        fdr_df = fdr_df.sort_values(by=['Source Method', 'Target FDR (%)'], kind='mergesort')
+                                        fdr_df['Target RDR (%)'] = col
+                                        fdr_df = fdr_df.sort_values(by=['Source Method', 'Target RDR (%)'], kind='mergesort')
 
                                 engine = None
                                 try:
@@ -3877,10 +3898,10 @@ def display_export_options(results, include_general_exports: bool = True):
                                         if not meta_df.empty:
                                             ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
                                             ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
-                                        # Set column widths for entire summary sheet (metadata + FDR table)
+                                        # Set column widths for entire summary sheet (metadata + RDR table)
                                         ws_summary.set_column(0, 0, 30, key_fmt)  # First column (keys)
                                         ws_summary.set_column(1, 1, 70, wrap_fmt)  # Second column (values)
-                                        ws_summary.set_column(2, 9, 20)  # Additional columns for FDR table
+                                        ws_summary.set_column(2, 9, 20)  # Additional columns for RDR table
 
                                         if ws_results and not filtered_df.empty:
                                             for c_idx, c_name in enumerate(list(filtered_df.columns)):
@@ -3900,7 +3921,7 @@ def display_export_options(results, include_general_exports: bool = True):
                             # CSV export with Source_Method column
                             csv_data = filtered_df.to_csv(index=False)
                             st.download_button(
-                                label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                                label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% RDR)",
                                 data=csv_data,
                                 file_name=f"diann_batch_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                                 mime="text/csv"
@@ -3929,9 +3950,9 @@ def display_export_options(results, include_general_exports: bool = True):
                                 is_discovery = (results.get('summary', {}) or {}).get('ground_truth_peptides', 1) == 0
                                 
                                 if is_discovery:
-                                    # Discovery mode: minimal columns (no FDR validation possible)
+                                    # Discovery mode: minimal columns (no RDR validation possible)
                                     rename_map = {
-                                        'Target_FDR': 'Target FDR (%)',
+                                        'Target_FDR': 'Target RDR (%)',
                                         'Threshold': 'Threshold',
                                         'Additional_Peptides': 'Discovered Peptides',
                                         'Increase_Pct': 'Increase %',
@@ -3939,11 +3960,11 @@ def display_export_options(results, include_general_exports: bool = True):
                                 else:
                                     # Validation mode: full columns with performance metrics
                                     rename_map = {
-                                        'Target_FDR': 'Target FDR (%)',
+                                        'Target_FDR': 'Target RDR (%)',
                                         'Threshold': 'Threshold',
                                         'Additional_Peptides': 'Additional Peptides',
                                         'False_Positives': 'False Positives',
-                                        'Actual_FDR': 'Actual FDR (%)',
+                                        'Actual_FDR': 'Actual RDR (%)',
                                         'Precision': 'Precision',
                                         'Recovery_Pct': 'Recovery %',
                                         'Increase_Pct': 'Increase %',
@@ -3951,12 +3972,12 @@ def display_export_options(results, include_general_exports: bool = True):
                                     }
                                 cols = [c for c in rename_map.keys() if c in fdr_df.columns]
                                 fdr_df = fdr_df[cols].rename(columns=rename_map)
-                                if 'Target FDR (%)' in fdr_df.columns:
+                                if 'Target RDR (%)' in fdr_df.columns:
                                     import numpy as _np
-                                    col = _pd.to_numeric(fdr_df['Target FDR (%)'], errors='coerce')
+                                    col = _pd.to_numeric(fdr_df['Target RDR (%)'], errors='coerce')
                                     col = col.replace([_np.inf, -_np.inf], _np.nan)
-                                    fdr_df['Target FDR (%)'] = col
-                                    fdr_df = fdr_df.sort_values(by='Target FDR (%)', kind='mergesort')
+                                    fdr_df['Target RDR (%)'] = col
+                                    fdr_df = fdr_df.sort_values(by='Target RDR (%)', kind='mergesort')
 
                             engine = None
                             try:
@@ -4019,10 +4040,10 @@ def display_export_options(results, include_general_exports: bool = True):
                                     if not meta_df.empty:
                                         ws_summary.write(5, 0, str(meta_df.columns[0]), header_fmt)
                                         ws_summary.write(5, 1, str(meta_df.columns[1]), header_fmt)
-                                    # Set column widths for entire summary sheet (metadata + FDR table)
+                                    # Set column widths for entire summary sheet (metadata + RDR table)
                                     ws_summary.set_column(0, 0, 30, key_fmt)  # First column (keys)
                                     ws_summary.set_column(1, 1, 70, wrap_fmt)  # Second column (values)
-                                    ws_summary.set_column(2, 9, 20)  # Additional columns for FDR table
+                                    ws_summary.set_column(2, 9, 20)  # Additional columns for RDR table
 
                                     if ws_results and not filtered_df.empty:
                                         for c_idx, c_name in enumerate(list(filtered_df.columns)):
@@ -4042,7 +4063,7 @@ def display_export_options(results, include_general_exports: bool = True):
                         # CSV export - identical to 'Filtered Results' sheet
                         csv_data = filtered_df.to_csv(index=False)
                         st.download_button(
-                            label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% FDR)",
+                            label=f"🧬 Download DIA-NN CSV ({tfdr:.1f}% RDR)",
                             data=csv_data,
                             file_name=f"diann_filtered_{tfdr:.1f}FDR_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                             mime="text/csv"
@@ -4057,21 +4078,24 @@ def display_export_options(results, include_general_exports: bool = True):
             with st.expander("Export details / troubleshooting"):
                 st.code(str(e))
     
-    st.markdown("### 📊 Analysis Files")
-    
-    # Show results directory info
-    if 'summary' in results:
+    # Inference runs are not persisted to a results directory - users export
+    # what they need via the export buttons above. Only training runs save a folder.
+    _is_inference = bool(
+        (results.get('summary', {}) or {}).get('inference_mode')
+        or (results.get('metadata', {}) or {}).get('inference_mode')
+    )
+    if not _is_inference and 'summary' in results:
+        st.markdown("### 📊 Analysis Files")
         results_dir = _resolve_results_dir_from_summary(results['summary'])
         st.info(f"📁 **Full results saved to:** `{results_dir}`")
-        
+
         st.markdown("**Directory contains:**")
         st.markdown("""
-        - `plots/` - High-resolution visualizations (PNG, 300 DPI)
-        - `tables/` - Detailed results tables (CSV format)
-        - `feature_analysis/` - Feature importance and SHAP analysis
-        - `raw_data/` - Complete analysis data and metadata
+        - `tables/detailed_results.csv` - Results table
+        - `feature_analysis/` - Feature importance + SHAP (top-20 plot, beeswarm, data)
+        - `saved_models/` - Trained model (for inference)
         """)
-    
+
     st.markdown("### 📧 Share Configuration")
     
     # Configuration sharing
@@ -4087,7 +4111,7 @@ def display_export_options(results, include_general_exports: bool = True):
         # Configuration string for sharing
         train_methods = config.get('train_methods', [])
         train_fdr_levels = config.get('train_fdr_levels', [])
-        config_string = f"Training: {', '.join(train_methods)} (FDR: {', '.join(map(str, train_fdr_levels))}%) → Testing: {test_method} (FDR: {test_fdr}%)"
+        config_string = f"Training: {', '.join(train_methods)} (RDR: {', '.join(map(str, train_fdr_levels))}%) → Testing: {test_method} (RDR: {test_fdr}%)"
         
         st.markdown("**Share this analysis configuration:**")
         st.code(config_string)
@@ -4099,10 +4123,10 @@ def display_export_options(results, include_general_exports: bool = True):
             **To recreate this analysis:**
             
             1. **Training Methods**: {', '.join(config.get('train_methods', []))}
-            2. **Training FDR Levels**: {', '.join(map(str, config.get('train_fdr_levels', [])))}%
+            2. **Training RDR Levels**: {', '.join(map(str, config.get('train_fdr_levels', [])))}%
             3. **Test Method**: {test_method}
-            4. **Test FDR Level**: {test_fdr}%
-            5. **Target FDR Levels**: {', '.join(map(str, config.get('target_fdr_levels', [])))}%
+            4. **Test RDR Level**: {test_fdr}%
+            5. **Target RDR Levels**: {', '.join(map(str, config.get('target_fdr_levels', [])))}%
             
             **XGBoost Parameters:**
             - Learning Rate: {config.get('xgb_params', {}).get('learning_rate', 0.08)}
@@ -4197,7 +4221,7 @@ def show_inference_interface():
                     with tab1:
                         # Batch overview - show aggregated metrics
                         if 'Source_Method' in results_df.columns:
-                            st.markdown("##### Peptides Discovered by Method and FDR")
+                            st.markdown("##### Peptides Discovered by Method and RDR")
                             pivot_df = results_df.pivot_table(
                                 index='Source_Method',
                                 columns='Target_FDR',
@@ -4215,12 +4239,15 @@ def show_inference_interface():
                         st.markdown("##### 📋 All Results")
                         # Rename columns for display
                         display_df = results_df.copy()
+                        for _col in ['Aggregation_Method', 'Total_Validated_Candidates', 'Selected_Sequences', 'Threshold_Source']:
+                            if _col in display_df.columns:
+                                display_df = display_df.drop(_col, axis=1)
                         rename_map = {
                             'Source_Method': 'Source Method',
-                            'Target_FDR': 'Target FDR (%)',
+                            'Target_FDR': 'Target RDR (%)',
                             'Additional_Peptides': 'Additional Peptides',
                             'False_Positives': 'False Positives',
-                            'Actual_FDR': 'Actual FDR (%)',
+                            'Actual_FDR': 'Actual RDR (%)',
                             'Recovery_Pct': 'Recovery %',
                             'Increase_Pct': 'Increase %',
                         }
@@ -4269,9 +4296,9 @@ def show_inference_interface():
                             if hasattr(st.session_state, 'inference_results'):
                                 baseline_peptides = st.session_state.inference_results.get('summary', {}).get('baseline_peptides', 
                                                   st.session_state.inference_results.get('baseline_peptides', 0))
-                            st.metric("Baseline Peptides", f"{baseline_peptides:,}" if baseline_peptides > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
+                            st.metric("Baseline Peptides", f"{baseline_peptides:,}" if baseline_peptides > 0 else "N/A", delta=None, help="Peptides from baseline 1% RDR analysis")
                         with col2:
-                            # Show discovered peptides at 5% FDR as an example
+                            # Show discovered peptides at 5% RDR as an example
                             fdr_5_result = None
                             for result in results_df.itertuples():
                                 if result.Target_FDR == 5.0:
@@ -4280,7 +4307,7 @@ def show_inference_interface():
                             
                             if fdr_5_result:
                                 peptide_count = int(fdr_5_result.Additional_Peptides)
-                                st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
+                                st.metric("Discovered Peptides (5% RDR)", peptide_count, delta=None, help="Peptides discovered at 5% RDR level")
                             else:
                                 st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
                         with col3:
@@ -4327,12 +4354,12 @@ def show_inference_interface():
                             col1, col2 = st.columns(2)
                             
                             with col1:
-                                st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% FDR)")
+                                st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% RDR)")
                                 st.markdown(f"**Method:** {actual_test_method}")
                                 st.markdown(f"**Total unique peptides:** {baseline_count:,}")
                                 st.info("High-confidence peptides identified by DIA-NN in short gradient conditions")
                                 
-                                st.markdown("#### 🌍 Ground Truth (Long Gradient 1% FDR)")
+                                st.markdown("#### 🌍 Ground Truth (Long Gradient 1% RDR)")
                                 
                                 # Show method-specific ground truth 
                                 ground_truth_strategy = f"Ground truth for {actual_test_method}"
@@ -4359,10 +4386,10 @@ def show_inference_interface():
                             with col2:
                                 st.markdown("#### 🔍 Test Set Analysis")
                                 
-                                # Get test FDR level from results
+                                # Get test RDR level from results
                                 test_fdr = 50  # Default
                                 if 'results' in st.session_state.inference_results and st.session_state.inference_results['results']:
-                                    # Try to get FDR from first result
+                                    # Try to get RDR from first result
                                     first_result = st.session_state.inference_results['results'][0]
                                     if 'test_fdr' in first_result:
                                         test_fdr = first_result['test_fdr']
@@ -4371,8 +4398,8 @@ def show_inference_interface():
                                 total_unique_in_test_files = baseline_count + additional_candidates
                                 
                                 st.markdown(f"**Test method:** {actual_test_method}")
-                                st.markdown(f"**Test FDR level:** {test_fdr}%")
-                                st.markdown(f"**Total unique peptides in {test_fdr}% FDR files:** {total_unique_in_test_files:,}")
+                                st.markdown(f"**Test RDR level:** {test_fdr}%")
+                                st.markdown(f"**Total unique peptides in {test_fdr}% RDR files:** {total_unique_in_test_files:,}")
                                 st.markdown(f"**Baseline peptides:** {baseline_count:,}")
                                 st.markdown(f"**Additional candidates remaining:** {additional_candidates:,}")
                                 
@@ -4448,8 +4475,16 @@ def show_inference_interface():
         help="Filter test methods by dataset type"
     )
     
-    # Model selection (compact)
-    model_options = [f"{model['run_id']} - {model['summary']}" for model in available_models]
+    # Model selection (compact) - show a clean date/time per run; pre-trained keeps its name
+    def _model_option_label(m):
+        if m.get('source') == 'Pretrained':
+            return m.get('run_id', 'Pre-trained model')
+        ts = m.get('timestamp', '')
+        try:
+            return datetime.fromisoformat(ts).strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return m.get('run_id', ts) or 'Trained model'
+    model_options = [_model_option_label(model) for model in available_models]
     selected_model_idx = st.sidebar.selectbox(
         "🤖 Select Trained Model:",
         range(len(model_options)),
@@ -4473,7 +4508,7 @@ def show_inference_interface():
         st.markdown(f"""
         **ID:** {selected_model['run_id']}  
         **Created:** {formatted_time}  
-        **Best FDR:** {selected_model['best_fdr']:.1f}%  
+        **Best RDR:** {selected_model['best_fdr']:.1f}%  
         **Training:** {', '.join(config['train_methods'])}  
         **Original Test:** {config['test_method']}
         """)
@@ -4531,28 +4566,28 @@ def show_inference_interface():
         """, unsafe_allow_html=True)
 
     test_fdr = st.sidebar.selectbox(
-        "📈 Select test FDR level:",
+        "📈 Select test RDR level:",
         [20, 50],
         index=1,  # Default to 50% like training
-        help="Choose the FDR level for the test dataset"
+        help="Choose the RDR level for the test dataset"
     )
     
-    # Target FDR levels (ONLY the ones the model was trained on)
-    with st.sidebar.expander("🎯 Target FDR Levels", expanded=True):
-        # Get the target FDR levels from the model's training configuration
+    # Target RDR levels (ONLY the ones the model was trained on)
+    with st.sidebar.expander("🎯 Target RDR Levels", expanded=True):
+        # Get the target RDR levels from the model's training configuration
         if 'target_fdr_levels' in config:
             available_fdr_levels = config['target_fdr_levels']
-            st.info(f"✅ This model has learned thresholds for {len(available_fdr_levels)} FDR levels")
+            st.info(f"✅ This model has learned thresholds for {len(available_fdr_levels)} RDR levels")
         else:
             # If no target_fdr_levels in config, show warning and use standard levels
             available_fdr_levels = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0, 30.0, 50.0]
             st.warning("⚠️ Model config missing target_fdr_levels. Using standard levels (may not work correctly)")
 
         target_fdr_levels = st.multiselect(
-            "FDR Levels (%):",
+            "RDR Levels (%):",
             available_fdr_levels,
             default=available_fdr_levels,
-            help="ONLY FDR levels that this model was trained on. The model has learned specific thresholds for these levels."
+            help="ONLY RDR levels that this model was trained on. The model has learned specific thresholds for these levels."
         )
     
     # Run inference button in sidebar and header
@@ -4567,7 +4602,7 @@ def show_inference_interface():
     # Handle inference execution
     if run_inference:
         if not target_fdr_levels:
-            st.error("Please select at least one target FDR level")
+            st.error("Please select at least one target RDR level")
         elif not test_methods:
             st.error("Please select at least one test method")
         elif batch_mode and len(test_methods) > 1:
@@ -4608,7 +4643,7 @@ def show_inference_interface():
             margin: 10px 0;
         ">
             <h4 style="color: #2E86AB; margin: 0 0 10px 0;">🧪 Test Data</h4>
-            <p style="margin: 0; color: #495057;">Select the dataset and FDR level you want to apply the model to.</p>
+            <p style="margin: 0; color: #495057;">Select the dataset and RDR level you want to apply the model to.</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -4621,8 +4656,8 @@ def show_inference_interface():
             border-left: 4px solid #2E86AB;
             margin: 10px 0;
         ">
-            <h4 style="color: #2E86AB; margin: 0 0 10px 0;">🎯 FDR Levels</h4>
-            <p style="margin: 0; color: #495057;">Configure the target FDR levels for your peptide recovery analysis.</p>
+            <h4 style="color: #2E86AB; margin: 0 0 10px 0;">🎯 RDR Levels</h4>
+            <p style="margin: 0; color: #495057;">Configure the target RDR levels for your peptide recovery analysis.</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -4658,14 +4693,72 @@ def show_inference_interface():
             levels_detail = "No levels selected"
         st.markdown(f"""
             <div title="{levels_detail}" style="cursor: help;">
-                <div style="font-size: 0.875rem; color: rgba(49, 51, 63, 0.6);">Target FDR Levels</div>
+                <div style="font-size: 0.875rem; color: rgba(49, 51, 63, 0.6);">Target RDR Levels</div>
                 <div style="font-size: 2.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{levels_text}</div>
             </div>
         """, unsafe_allow_html=True)
 
+def _get_bundled_models_dir():
+    """Return the repo-root `models/` dir holding shipped pre-trained models.
+
+    Resolved directly from this file's location so it works regardless of the
+    current working directory. This file is at <repo>/src/peptidia/web/, so the
+    repo root is parents[3] (web -> peptidia -> src -> repo). Note: the module-level
+    `project_root` resolves to <repo>/src, not the repo root, so it is not used here.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    return os.path.join(str(repo_root), "models")
+
+
 def load_trained_models_from_history():
     """Load trained models from run history and discover CLI models."""
     models = []
+
+    # First, discover bundled pre-trained production models shipped in models/.
+    # These reuse the standard saved_models/ layout, so they flow through the same
+    # dropdown and loader as user-trained models - they simply appear as extra options.
+    try:
+        bundled_dir = _get_bundled_models_dir()
+        if os.path.isdir(bundled_dir):
+            for d_name in sorted(os.listdir(bundled_dir)):
+                model_dir = os.path.join(bundled_dir, d_name)
+                model_file = os.path.join(model_dir, "saved_models", "trained_model.joblib")
+                if not os.path.exists(model_file):
+                    continue
+
+                cfg = {}
+                config_file = os.path.join(model_dir, "config.json")
+                if os.path.exists(config_file):
+                    try:
+                        with open(config_file, 'r') as f:
+                            cfg = json.load(f)
+                    except Exception:
+                        pass
+
+                meta = {}
+                metadata_file = os.path.join(model_dir, "saved_models", "model_metadata.json")
+                if os.path.exists(metadata_file):
+                    try:
+                        with open(metadata_file, 'r') as f:
+                            meta = json.load(f)
+                    except Exception:
+                        pass
+
+                n_feats = meta.get('n_features', '?')
+                models.append({
+                    'run_id': cfg.get('model_label', d_name),
+                    'timestamp': meta.get('save_timestamp', '1970-01-01T00:00:00'),
+                    'config': cfg,
+                    'runtime': 0,
+                    'best_fdr': 0.0,
+                    'best_peptides': 0,
+                    'results_dir': model_dir,
+                    'total_results': 0,
+                    'summary': f"{n_feats} features · trained on all tissues",
+                    'source': 'Pretrained'
+                })
+    except Exception as e:
+        st.warning(f"Could not load bundled pre-trained models: {str(e)}")
     
     # First, load from Streamlit history file
     history_file = get_history_file_path()
@@ -4702,7 +4795,7 @@ def load_trained_models_from_history():
                     'best_peptides': best_peptides,
                     'results_dir': run['summary'].get('results_dir', ''),
                     'total_results': run['summary'].get('total_results', 0),
-                    'summary': f"FDR: {best_fdr:.1f}% | Peptides: {best_peptides:,}",
+                    'summary': f"RDR: {best_fdr:.1f}% | Peptides: {best_peptides:,}",
                     'source': 'Streamlit'
                 }
                 models.append(model_info)
@@ -4712,7 +4805,10 @@ def load_trained_models_from_history():
     
     # Second, discover CLI models from results directories
     try:
-        results_dir = os.path.join(os.path.dirname(__file__), "results")
+        # Results live at the repo root, not under src/peptidia/web/. Resolve from
+        # this file's location (web -> peptidia -> src -> repo) so discovery works
+        # regardless of the current working directory.
+        results_dir = os.path.join(str(Path(__file__).resolve().parents[3]), "results")
         if os.path.exists(results_dir):
             for dir_name in os.listdir(results_dir):
                 if dir_name.startswith("CLI_RESULTS_"):
@@ -4773,7 +4869,7 @@ def load_trained_models_from_history():
                                 'best_peptides': best_result['Additional_Peptides'] if best_result else 0,
                                 'results_dir': os.path.join(results_dir, dir_name),
                                 'total_results': len(metadata.get('training_results', [])),
-                                'summary': f"FDR: {best_result['Actual_FDR']:.1f}% | Peptides: {best_result['Additional_Peptides']:,}" if best_result else "CLI Model",
+                                'summary': f"RDR: {best_result['Actual_FDR']:.1f}% | Peptides: {best_result['Additional_Peptides']:,}" if best_result else "CLI Model",
                                 'source': 'CLI'
                             }
                             models.append(model_info)
@@ -4887,7 +4983,7 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                 additional_peptides = set(test_data['Modified.Sequence']) - baseline_peptides
             
             if len(test_data) == 0:
-                st.error(f"❌ No test data found for {test_method} at {test_fdr}% FDR")
+                st.error(f"❌ No test data found for {test_method} at {test_fdr}% RDR")
                 return
             
             status_text.text("Creating features...")
@@ -4980,7 +5076,7 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
             
         
             
-            # Run threshold optimization for each target FDR
+            # Run threshold optimization for each target RDR
             results = []
             selected_sequences_by_fdr = {}
             # Determine peptide sequence column in aggregated table
@@ -5016,17 +5112,17 @@ def run_inference_analysis(selected_model, test_method, test_fdr, target_fdr_lev
                         pass
                     
                     if is_discovery_mode:
-                        # Discovery mode: do not report FP/Actual FDR; show discovered peptides only
+                        # Discovery mode: do not report FP/Actual RDR; show discovered peptides only
                         tp = discovered_peptides
                         fp = 0
                         actual_fdr = 0
                     else:
-                        # Validation mode metrics - normal FDR calculation
+                        # Validation mode metrics - normal RDR calculation
                         tp = np.sum((y_pred == 1) & (peptide_labels == 1))
                         fp = np.sum((y_pred == 1) & (peptide_labels == 0))
                         actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
                 else:
-                    # No valid threshold found for this FDR level
+                    # No valid threshold found for this RDR level
                     y_pred = np.zeros_like(peptide_predictions, dtype=int)
                     tp = 0
                     fp = 0
@@ -5233,7 +5329,7 @@ def run_batch_inference_analysis(selected_model, test_methods, test_fdr, target_
 
             # Process each method
             all_results = []  # Combined results with Source_Method column
-            all_selected_sequences = {}  # Combined selected sequences by method and FDR
+            all_selected_sequences = {}  # Combined selected sequences by method and RDR
             method_summaries = {}  # Summary for each method
 
             for method_idx, test_method in enumerate(test_methods):
@@ -5258,7 +5354,7 @@ def run_batch_inference_analysis(selected_model, test_methods, test_fdr, target_
                         additional_peptides = set(test_data['Modified.Sequence']) - baseline_peptides
 
                     if len(test_data) == 0:
-                        st.warning(f"⚠️ No test data found for {test_method} at {test_fdr}% FDR - skipping")
+                        st.warning(f"⚠️ No test data found for {test_method} at {test_fdr}% RDR - skipping")
                         continue
 
                     detail_status.text(f"Creating features for {test_method}...")
@@ -5285,7 +5381,7 @@ def run_batch_inference_analysis(selected_model, test_methods, test_fdr, target_
 
                     is_discovery_mode = len(ground_truth_peptides) == 0
 
-                    # Process each target FDR
+                    # Process each target RDR
                     seq_col_agg = 'Modified.Sequence' if 'Modified.Sequence' in peptide_data.columns else 'Stripped.Sequence'
                     last_threshold = None
                     last_tp = 0
@@ -5520,10 +5616,10 @@ def run_inference(selected_model, test_method, test_fdr, target_fdr_levels):
             progress_bar.progress(30)
             status_text.text("Preparing data...")
             
-            # Run inference for each target FDR level
+            # Run inference for each target RDR level
             results = {}
             for i, target_fdr in enumerate(target_fdr_levels):
-                status_text.text(f"Running inference for {target_fdr}% FDR...")
+                status_text.text(f"Running inference for {target_fdr}% RDR...")
                 progress_bar.progress(30 + (i * 50 // len(target_fdr_levels)))
                 
                 # Configure for inference
@@ -5626,7 +5722,7 @@ def run_single_inference(config):
         else:
             y_pred_proba = model.predict(X_test)
         
-        # Find optimal threshold for target FDR
+        # Find optimal threshold for target RDR
         from src.peptidia.core.peptide_validator_api import find_optimal_threshold
         optimal_threshold = find_optimal_threshold(y_test_true, y_pred_proba, target_fdr)
         
@@ -5636,7 +5732,7 @@ def run_single_inference(config):
         # Calculate metrics
         from sklearn.metrics import matthews_corrcoef, precision_score, recall_score, f1_score, confusion_matrix
         
-        # Calculate FDR on additional peptides only
+        # Calculate RDR on additional peptides only
         tn, fp, fn, tp = confusion_matrix(y_test_true, y_pred).ravel()
         actual_fdr = (fp / (tp + fp) * 100) if (tp + fp) > 0 else 0
         
@@ -5746,7 +5842,7 @@ def display_inference_results(results, selected_model, test_method, test_fdr, ta
     # Results header
     st.markdown("### 📊 Inference Results")
     st.markdown(f"**Model:** {selected_model['model_name']}")
-    st.markdown(f"**Test Data:** {test_method} at {test_fdr}% FDR")
+    st.markdown(f"**Test Data:** {test_method} at {test_fdr}% RDR")
     st.markdown("---")
     
     # Results summary table
@@ -5756,8 +5852,8 @@ def display_inference_results(results, selected_model, test_method, test_fdr, ta
     for target_fdr in target_fdr_levels:
         result = results[target_fdr]
         summary_data.append({
-            'Target FDR (%)': target_fdr,
-            'Actual FDR (%)': f"{result['actual_fdr']:.2f}",
+            'Target RDR (%)': target_fdr,
+            'Actual RDR (%)': f"{result['actual_fdr']:.2f}",
             'Additional Peptides': result['additional_peptides'],
             'Improvement (%)': f"{result['improvement_percent']:.2f}",
             'MCC': f"{result['mcc']:.3f}",
@@ -5773,12 +5869,12 @@ def display_inference_results(results, selected_model, test_method, test_fdr, ta
     col1, col2 = st.columns(2)
     
     with col1:
-        # FDR vs Additional Peptides
+        # RDR vs Additional Peptides
         fig_fdr = px.scatter(
             summary_df, 
-            x='Target FDR (%)', 
+            x='Target RDR (%)', 
             y='Additional Peptides',
-            title='📊 FDR vs Additional Peptides',
+            title='📊 RDR vs Additional Peptides',
             color_discrete_sequence=[CHART_COLORS['line_primary']]
         )
         fig_fdr.update_traces(size=12)
@@ -5795,16 +5891,16 @@ def display_inference_results(results, selected_model, test_method, test_fdr, ta
         for target_fdr in target_fdr_levels:
             result = results[target_fdr]
             metrics_data.extend([
-                {'Target FDR': f"{target_fdr}%", 'Metric': 'MCC', 'Value': result['mcc']},
-                {'Target FDR': f"{target_fdr}%", 'Metric': 'Precision', 'Value': result['precision']},
-                {'Target FDR': f"{target_fdr}%", 'Metric': 'Recall', 'Value': result['recall']},
-                {'Target FDR': f"{target_fdr}%", 'Metric': 'F1 Score', 'Value': result['f1']}
+                {'Target RDR': f"{target_fdr}%", 'Metric': 'MCC', 'Value': result['mcc']},
+                {'Target RDR': f"{target_fdr}%", 'Metric': 'Precision', 'Value': result['precision']},
+                {'Target RDR': f"{target_fdr}%", 'Metric': 'Recall', 'Value': result['recall']},
+                {'Target RDR': f"{target_fdr}%", 'Metric': 'F1 Score', 'Value': result['f1']}
             ])
         
         metrics_df = pd.DataFrame(metrics_data)
         fig_metrics = px.bar(
             metrics_df,
-            x='Target FDR',
+            x='Target RDR',
             y='Value',
             color='Metric',
             title='📈 Performance Metrics',
@@ -5862,7 +5958,7 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
     # Results header
     st.markdown("### 📊 Inference Results")
     st.markdown(f"**Model:** {selected_model['model_name']}")
-    st.markdown(f"**Test Data:** {test_method} at {test_fdr}% FDR")
+    st.markdown(f"**Test Data:** {test_method} at {test_fdr}% RDR")
     st.markdown("---")
     
     # Convert results to DataFrame for display
@@ -5891,9 +5987,9 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
             with col1:
                 # Get baseline peptides from summary section
                 baseline_count = formatted_results.get('summary', {}).get('baseline_peptides', formatted_results.get('baseline_peptides', 0))
-                st.metric("Baseline Peptides", f"{baseline_count:,}" if baseline_count > 0 else "N/A", delta=None, help="Peptides from baseline 1% FDR analysis")
+                st.metric("Baseline Peptides", f"{baseline_count:,}" if baseline_count > 0 else "N/A", delta=None, help="Peptides from baseline 1% RDR analysis")
             with col2:
-                # Show discovered peptides at 5% FDR as an example
+                # Show discovered peptides at 5% RDR as an example
                 fdr_5_result = None
                 for result in results_df.itertuples():
                     if result.Target_FDR == 5.0:
@@ -5902,7 +5998,7 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
                 
                 if fdr_5_result:
                     peptide_count = int(fdr_5_result.Additional_Peptides)
-                    st.metric("Discovered Peptides (5% FDR)", peptide_count, delta=None, help="Peptides discovered at 5% FDR level")
+                    st.metric("Discovered Peptides (5% RDR)", peptide_count, delta=None, help="Peptides discovered at 5% RDR level")
                 else:
                     st.metric("Discovered Peptides", int(best_result['Additional_Peptides']), delta=None, help="Additional peptides discovered by ML model")
             with col3:
@@ -5956,12 +6052,12 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% FDR)")
+                    st.markdown("#### 🎯 Baseline Peptides (Short Gradient 1% RDR)")
                     st.markdown(f"**Method:** {test_method}")
                     st.markdown(f"**Total unique peptides:** {baseline_count:,}")
                     st.info("High-confidence peptides identified by DIA-NN in short gradient conditions")
                     
-                    st.markdown("#### 🌍 Ground Truth (Long Gradient 1% FDR)")
+                    st.markdown("#### 🌍 Ground Truth (Long Gradient 1% RDR)")
                     
                     # Show method-specific ground truth 
                     ground_truth_strategy = f"Ground truth for {test_method}"
@@ -5992,8 +6088,8 @@ def display_inference_results_formatted(formatted_results, selected_model, test_
                     total_unique_in_test_files = baseline_count + additional_candidates
                     
                     st.markdown(f"**Test method:** {test_method}")
-                    st.markdown(f"**Test FDR level:** {test_fdr}%")
-                    st.markdown(f"**Total unique peptides in {test_fdr}% FDR files:** {total_unique_in_test_files:,}")
+                    st.markdown(f"**Test RDR level:** {test_fdr}%")
+                    st.markdown(f"**Total unique peptides in {test_fdr}% RDR files:** {total_unique_in_test_files:,}")
                     st.markdown(f"**Baseline peptides:** {baseline_count:,}")
                     st.markdown(f"**Additional candidates remaining:** {additional_candidates:,}")
                     
@@ -6076,20 +6172,20 @@ def display_inference_table_only(df):
         # Discovery mode explanations
         st.info("""
         **🔬 Discovery Mode - Column Explanations (left to right):**
-        • **Target FDR**: FDR threshold used for discovery (from training)
+        • **Target RDR**: RDR threshold used for discovery (from training)
         • **Threshold**: Model confidence threshold used for predictions
-        • **Discovered Peptides**: Total peptides discovered at this FDR level
+        • **Discovered Peptides**: Total peptides discovered at this RDR level
         • **Increase %**: Improvement over baseline peptide count
         """)
     else:
         # Validation mode explanations
         st.info("""
         **📊 Validation Mode - Column Explanations (left to right):**
-        • **Target FDR**: Desired false discovery rate threshold
+        • **Target RDR**: Desired reference-discordance rate threshold
         • **Threshold**: Model confidence threshold used for predictions
         • **Additional Unique Peptides**: Total additional peptides identified (includes both true and false positives)
         • **False Positives**: Model predictions not validated by ground truth
-        • **Actual FDR**: Measured false discovery rate of additional peptides
+        • **Actual RDR**: Measured reference-discordance rate of additional peptides
         • **Recovery %**: Percentage of validated candidates successfully recovered
         • **Increase %**: Improvement over baseline peptide count
         • **MCC**: Matthews Correlation Coefficient (-1 to +1, higher is better)
@@ -6131,18 +6227,18 @@ def display_inference_table_only(df):
     # Configure columns based on mode
     if is_discovery_mode:
         column_config = {
-            "Target_FDR": st.column_config.TextColumn("Target FDR", help="FDR threshold used for discovery (from training)"),
+            "Target_FDR": st.column_config.TextColumn("Target RDR", help="RDR threshold used for discovery (from training)"),
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
-            "Discovered_Peptides": st.column_config.NumberColumn("Discovered Peptides", help="Total peptides discovered at this FDR level"),
+            "Discovered_Peptides": st.column_config.NumberColumn("Discovered Peptides", help="Total peptides discovered at this RDR level"),
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline")
         }
     else:
         column_config = {
-            "Target_FDR": st.column_config.TextColumn("Target FDR", help="Desired false discovery rate"),
+            "Target_FDR": st.column_config.TextColumn("Target RDR", help="Desired reference-discordance rate"),
             "Threshold": st.column_config.NumberColumn("Threshold", help="Model confidence threshold used for predictions", format="%.3f"),
             "Additional_Peptides": st.column_config.NumberColumn("Additional Unique Peptides", help="Total additional peptides identified (includes both true and false positives)"),
             "False_Positives": st.column_config.NumberColumn("False Positives", help="Model predictions not in ground truth"),
-            "Actual_FDR": st.column_config.TextColumn("Actual FDR", help="Measured false discovery rate of additional peptides"),
+            "Actual_FDR": st.column_config.TextColumn("Actual RDR", help="Measured reference-discordance rate of additional peptides"),
             "Recovery_Pct": st.column_config.TextColumn("Recovery %", help="% of validated candidates recovered"),
             "Increase_Pct": st.column_config.TextColumn("Increase %", help="% improvement over baseline"),
             "MCC": st.column_config.TextColumn("MCC", help="Matthews Correlation Coefficient - Quality metric (-1 to +1, higher is better)")
@@ -6207,7 +6303,7 @@ def load_baseline_peptides_inference(test_method=None):
                 f for f in training_files 
                 if f['method'] == test_method and f['fdr'] == 1
             ]
-            st.info(f"🎯 Looking for baseline files: method='{test_method}' FDR=1")
+            st.info(f"🎯 Looking for baseline files: method='{test_method}' RDR=1")
             st.info(f"📁 Found {len(baseline_files)} baseline files for {test_method}")
             
             # DEBUG: Show what files we're looking at
@@ -6337,7 +6433,7 @@ def load_test_data_inference(test_methods, test_fdr, baseline_peptides, ground_t
         files_info = discover_available_files()
         training_files = files_info.get('training', [])
         
-        # Filter for the specific method and FDR
+        # Filter for the specific method and RDR
         test_files = [
             f for f in training_files 
             if f['method'] in test_methods and f['fdr'] == test_fdr
@@ -6423,7 +6519,7 @@ def save_model_to_streamlit_directory(model, config, results, model_name=None):
         return None
 
 def save_fdr_results_to_streamlit_directory(results_df, config, results_name=None):
-    """Save FDR analysis results to the streamlit fdr_results directory."""
+    """Save RDR analysis results to the streamlit fdr_results directory."""
     try:
         # Create results directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -6458,7 +6554,7 @@ def show_add_dataset_uploader():
         st.success(f"✅ Dataset '{info['name']}' created successfully!")
         st.success(f"📁 Saved {info['files']} files to `data/{info['name']}/`")
         if info.get('fdr_levels'):
-            st.info(f"📊 Available FDR levels: {', '.join(info['fdr_levels'])}%")
+            st.info(f"📊 Available RDR levels: {', '.join(info['fdr_levels'])}%")
         st.info("🎉 Your dataset is now available on the main page and in Training/Inference modes!")
 
     # Inject custom CSS for drag-and-drop styling
@@ -6579,13 +6675,13 @@ def show_add_dataset_uploader():
     # Create tabs for different file categories
     tab1, tab2, tab3, tab4 = st.tabs([
         "🎯 Ground Truth",
-        "📋 Baseline (FDR 1%)",
-        "📈 Training (FDR 20%)",
-        "📈 Training (FDR 50%)"
+        "📋 Baseline (RDR 1%)",
+        "📈 Training (RDR 20%)",
+        "📈 Training (RDR 50%)"
     ])
 
     with tab1:
-        st.markdown("**🎯 Ground Truth Files** - Long gradient at 1% FDR")
+        st.markdown("**🎯 Ground Truth Files** - Long gradient at 1% RDR")
         ground_truth_files = st.file_uploader(
             "Drag & drop parquet files here",
             type=['parquet'],
@@ -6597,7 +6693,7 @@ def show_add_dataset_uploader():
             st.success(f"✅ {len(ground_truth_files)} ground truth file(s) ready")
 
     with tab2:
-        st.markdown("**📋 Baseline Files** - Short gradient at 1% FDR")
+        st.markdown("**📋 Baseline Files** - Short gradient at 1% RDR")
         baseline_files = st.file_uploader(
             "Drag & drop parquet files here",
             type=['parquet'],
@@ -6609,7 +6705,7 @@ def show_add_dataset_uploader():
             st.success(f"✅ {len(baseline_files)} baseline file(s) ready")
 
     with tab3:
-        st.markdown("**📈 Training Files (20% FDR)** - Short gradient")
+        st.markdown("**📈 Training Files (20% RDR)** - Short gradient")
         training_20_files = st.file_uploader(
             "Drag & drop parquet files here",
             type=['parquet'],
@@ -6618,10 +6714,10 @@ def show_add_dataset_uploader():
             label_visibility="collapsed"
         )
         if training_20_files:
-            st.success(f"✅ {len(training_20_files)} FDR 20% file(s) ready")
+            st.success(f"✅ {len(training_20_files)} RDR 20% file(s) ready")
 
     with tab4:
-        st.markdown("**📈 Training Files (50% FDR)** - Short gradient")
+        st.markdown("**📈 Training Files (50% RDR)** - Short gradient")
         training_50_files = st.file_uploader(
             "Drag & drop parquet files here",
             type=['parquet'],
@@ -6630,7 +6726,7 @@ def show_add_dataset_uploader():
             label_visibility="collapsed"
         )
         if training_50_files:
-            st.success(f"✅ {len(training_50_files)} FDR 50% file(s) ready")
+            st.success(f"✅ {len(training_50_files)} RDR 50% file(s) ready")
 
     st.markdown("---")
 
@@ -6645,15 +6741,15 @@ def show_add_dataset_uploader():
         if baseline_files:
             categories.append(f"📋 {len(baseline_files)} baseline")
         if training_20_files:
-            categories.append(f"📈 {len(training_20_files)} FDR 20%")
+            categories.append(f"📈 {len(training_20_files)} RDR 20%")
         if training_50_files:
-            categories.append(f"📈 {len(training_50_files)} FDR 50%")
+            categories.append(f"📈 {len(training_50_files)} RDR 50%")
         st.markdown(f"**📊 Summary:** {' • '.join(categories)}")
 
-    # Check if we have at least one elevated FDR level
+    # Check if we have at least one elevated RDR level
     has_elevated_fdr = bool(training_20_files) or bool(training_50_files)
     if total_files > 0 and not has_elevated_fdr:
-        st.warning("⚠️ **Missing elevated FDR files!** You need FDR 20% or FDR 50% files to run inference/training.")
+        st.warning("⚠️ **Missing elevated RDR files!** You need RDR 20% or RDR 50% files to run inference/training.")
 
     # Save button
     if st.button("💾 Create Dataset & Save Files", type="primary", disabled=not dataset_name or not has_elevated_fdr):
@@ -6685,7 +6781,7 @@ def show_add_dataset_uploader():
                         out_file.write(f.getbuffer())
                     saved_count += 1
 
-            # FDR 20% files
+            # RDR 20% files
             if training_20_files:
                 fdr20_folder = os.path.join(base_path, "short_gradient", "FDR_20")
                 os.makedirs(fdr20_folder, exist_ok=True)
@@ -6695,7 +6791,7 @@ def show_add_dataset_uploader():
                         out_file.write(f.getbuffer())
                     saved_count += 1
 
-            # FDR 50% files
+            # RDR 50% files
             if training_50_files:
                 fdr50_folder = os.path.join(base_path, "short_gradient", "FDR_50")
                 os.makedirs(fdr50_folder, exist_ok=True)

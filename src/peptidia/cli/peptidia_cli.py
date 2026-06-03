@@ -55,8 +55,8 @@ class PeptiDIACLI:
     def _clean_step_name(self, step_name: str) -> str:
         """Convert technical step names to user-friendly descriptions."""
         step_mappings = {
-            "Loading baseline peptides fast gradient 1% FDR": "Loading baseline data",
-            "Loading baseline peptides ASTRAL 7min 1% FDR": "Loading baseline data",
+            "Loading baseline peptides fast gradient 1% RDR": "Loading baseline data",
+            "Loading baseline peptides ASTRAL 7min 1% RDR": "Loading baseline data",
             "Loading ground truth peptides": "Loading ground truth data",
             "Analyzing improvement opportunity": "Calculating improvement potential",
             "Loading and preparing training data": "Preparing training data",
@@ -140,7 +140,7 @@ class PeptiDIACLI:
             # Count files in each category
             baseline_count = len(info.get('baseline', {}))
             
-            # Count training methods across FDR levels
+            # Count training methods across RDR levels
             training_info = info.get('training', {})
             training_20_count = len(training_info.get('20', {}))
             training_50_count = len(training_info.get('50', {}))
@@ -148,9 +148,9 @@ class PeptiDIACLI:
             gt_count = len(info.get('ground_truth', {}))
             
             print(f"{Colors.GREEN}{i:>2}. {Colors.BOLD}{dataset:<15}{Colors.ENDC}")
-            print(f"    {Colors.BLUE}Baseline (1% FDR): {Colors.BOLD}{baseline_count:>2}{Colors.ENDC} methods")
-            print(f"    {Colors.BLUE}Training (20% FDR): {Colors.BOLD}{training_20_count:>2}{Colors.ENDC} methods")
-            print(f"    {Colors.BLUE}Training (50% FDR): {Colors.BOLD}{training_50_count:>2}{Colors.ENDC} methods")
+            print(f"    {Colors.BLUE}Baseline (1% RDR): {Colors.BOLD}{baseline_count:>2}{Colors.ENDC} methods")
+            print(f"    {Colors.BLUE}Training (20% RDR): {Colors.BOLD}{training_20_count:>2}{Colors.ENDC} methods")
+            print(f"    {Colors.BLUE}Training (50% RDR): {Colors.BOLD}{training_50_count:>2}{Colors.ENDC} methods")
             print(f"    {Colors.BLUE}Ground Truth: {Colors.BOLD}{gt_count:>2}{Colors.ENDC} methods")
             
             # Show sample method names if available
@@ -241,7 +241,7 @@ class PeptiDIACLI:
             
         print(f"{Colors.CYAN}{'-'*80}{Colors.ENDC}")
         print(f"{Colors.CYAN}💡 Validation mode: Uses ground truth for performance metrics{Colors.ENDC}")
-        print(f"{Colors.CYAN}💡 Discovery mode: No ground truth - estimates FDR thresholds{Colors.ENDC}")
+        print(f"{Colors.CYAN}💡 Discovery mode: No ground truth - estimates RDR thresholds{Colors.ENDC}")
         return all_methods
     
     def display_inference_methods(self, dataset: str) -> List[str]:
@@ -422,7 +422,7 @@ class PeptiDIACLI:
         print(f"\n{Colors.BOLD}⚙️  ANALYSIS CONFIGURATION{Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*60}")
         
-        # Select FDR levels
+        # Select RDR levels
         train_fdr = self.select_training_fdr_levels()
         test_fdr = self.select_test_fdr_level()
         
@@ -490,12 +490,12 @@ class PeptiDIACLI:
         return True
     
     def select_training_fdr_levels(self) -> List[int]:
-        """Select training FDR levels from standard options."""
-        print(f"\n{Colors.BLUE}📈 Select training FDR levels{Colors.ENDC}")
+        """Select training RDR levels from standard options."""
+        print(f"\n{Colors.BLUE}📈 Select training RDR levels{Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*50}")
-        print(f"{Colors.GREEN}1. 1% FDR{Colors.ENDC}")
-        print(f"{Colors.GREEN}2. 20% FDR{Colors.ENDC}")
-        print(f"{Colors.GREEN}3. 50% FDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}1. 1% RDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}2. 20% RDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}3. 50% RDR{Colors.ENDC}")
         print(f"{Colors.GREEN}4. Multiple levels (1, 20, 50){Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*50}{Colors.ENDC}")
         
@@ -519,12 +519,12 @@ class PeptiDIACLI:
                 return [50]  # Default
     
     def select_test_fdr_level(self) -> int:
-        """Select test FDR level from standard options."""
-        print(f"\n{Colors.BLUE}📈 Select test FDR level{Colors.ENDC}")
+        """Select test RDR level from standard options."""
+        print(f"\n{Colors.BLUE}📈 Select test RDR level{Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*50}")
-        print(f"{Colors.GREEN}1. 1% FDR{Colors.ENDC}")
-        print(f"{Colors.GREEN}2. 20% FDR{Colors.ENDC}")
-        print(f"{Colors.GREEN}3. 50% FDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}1. 1% RDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}2. 20% RDR{Colors.ENDC}")
+        print(f"{Colors.GREEN}3. 50% RDR{Colors.ENDC}")
         print(f"{Colors.CYAN}{'='*50}{Colors.ENDC}")
         
         while True:
@@ -545,8 +545,8 @@ class PeptiDIACLI:
                 return 50  # Default
     
     def select_target_fdrs(self) -> List[float]:
-        """Select target FDR levels for analysis."""
-        print(f"\n{Colors.BLUE}🎯 Select target FDR levels for results{Colors.ENDC}")
+        """Select target RDR levels for analysis."""
+        print(f"\n{Colors.BLUE}🎯 Select target RDR levels for results{Colors.ENDC}")
         print(f"{Colors.GREEN}Default: 1, 2, 3, 4, 5, 10, 15, 20, 30, 50{Colors.ENDC}")
         
         while True:
@@ -558,11 +558,11 @@ class PeptiDIACLI:
                 
                 levels = [float(x.strip()) for x in choice.split(',')]
                 
-                # Validate FDR levels
+                # Validate RDR levels
                 valid_levels = [x for x in levels if 0.1 <= x <= 50.0]
                 
                 if not valid_levels:
-                    print(f"{Colors.WARNING}⚠️  Please enter valid FDR levels between 0.1 and 50{Colors.ENDC}")
+                    print(f"{Colors.WARNING}⚠️  Please enter valid RDR levels between 0.1 and 50{Colors.ENDC}")
                     continue
                 
                 return sorted(valid_levels)
@@ -579,7 +579,7 @@ class PeptiDIACLI:
         
         # Compact display
         print(f"{Colors.BLUE}Dataset: {Colors.BOLD}{config['dataset']}{Colors.ENDC}")
-        print(f"{Colors.BLUE}Training: {Colors.BOLD}{len(config['train_methods'])} methods{Colors.ENDC} at {Colors.BOLD}{config['train_fdr_levels'][0]}% FDR{Colors.ENDC}")
+        print(f"{Colors.BLUE}Training: {Colors.BOLD}{len(config['train_methods'])} methods{Colors.ENDC} at {Colors.BOLD}{config['train_fdr_levels'][0]}% RDR{Colors.ENDC}")
         
         # Show method numbers instead of full names
         method_numbers = []
@@ -596,7 +596,7 @@ class PeptiDIACLI:
             test_method_num = test_sample_id
         
         print(f"{Colors.BLUE}Train samples: {Colors.BOLD}{', '.join(method_numbers)}{Colors.ENDC}")
-        print(f"{Colors.BLUE}Test sample: {Colors.BOLD}{test_method_num}{Colors.ENDC} at {Colors.BOLD}{config['test_fdr']}% FDR{Colors.ENDC}")
+        print(f"{Colors.BLUE}Test sample: {Colors.BOLD}{test_method_num}{Colors.ENDC} at {Colors.BOLD}{config['test_fdr']}% RDR{Colors.ENDC}")
         print(f"{Colors.BLUE}Target FDRs: {Colors.BOLD}{len(config['target_fdr_levels'])} levels{Colors.ENDC} ({min(config['target_fdr_levels']):.0f}-{max(config['target_fdr_levels']):.0f}%)")
         
         print(f"{Colors.CYAN}{'='*60}{Colors.ENDC}")
@@ -729,7 +729,7 @@ class PeptiDIACLI:
             
             # Header with proper column names including Increase %
             header = f"{'Target':>8} | {'Threshold':>10} | {'Additional':>11} | {'Add. Valid':>10} | {'False':>7} | {'Actual':>8} | {'Recovery':>9} | {'Increase':>9} | {'MCC':>7}"
-            subheader = f"{'FDR':>8} | {'':>10} | {'Peptides':>11} | {'Peptides':>10} | {'Pos':>7} | {'FDR':>8} | {'%':>9} | {'%':>9} | {'':>7}"
+            subheader = f"{'RDR':>8} | {'':>10} | {'Peptides':>11} | {'Peptides':>10} | {'Pos':>7} | {'RDR':>8} | {'%':>9} | {'%':>9} | {'':>7}"
             
             print(f"{Colors.BOLD}{header}")
             print(f"{subheader}{Colors.ENDC}")
@@ -834,9 +834,9 @@ class PeptiDIACLI:
         training_50_count = len(dataset_info.get('training', {}).get('50', {}))
         gt_count = len(dataset_info.get('ground_truth', {}))
         
-        print(f"{Colors.GREEN}Baseline (1% FDR): {Colors.BOLD}{baseline_count:>2}{Colors.ENDC} methods")
-        print(f"{Colors.GREEN}Training (20% FDR): {Colors.BOLD}{training_20_count:>2}{Colors.ENDC} methods")
-        print(f"{Colors.GREEN}Training (50% FDR): {Colors.BOLD}{training_50_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Baseline (1% RDR): {Colors.BOLD}{baseline_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Training (20% RDR): {Colors.BOLD}{training_20_count:>2}{Colors.ENDC} methods")
+        print(f"{Colors.GREEN}Training (50% RDR): {Colors.BOLD}{training_50_count:>2}{Colors.ENDC} methods")
         print(f"{Colors.GREEN}Ground Truth: {Colors.BOLD}{gt_count:>2}{Colors.ENDC} methods")
         print()
     
@@ -1575,7 +1575,7 @@ class PeptiDIACLI:
         if training_results:
             print(f"\n{Colors.BOLD}Training Results:{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
+            header = f"{'Target RDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual RDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
             
@@ -1659,19 +1659,19 @@ class PeptiDIACLI:
                 print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
                 return None
         
-        # Select test FDR
+        # Select test RDR
         fdr_options = [20, 50]
-        print(f"\n{Colors.BOLD}Test FDR Level:{Colors.ENDC}")
+        print(f"\n{Colors.BOLD}Test RDR Level:{Colors.ENDC}")
         for i, fdr in enumerate(fdr_options, 1):
             print(f"{i}. {fdr}%")
         
         while True:
             try:
-                choice = input(f"{Colors.BLUE}Select FDR level (1-{len(fdr_options)}): {Colors.ENDC}")
+                choice = input(f"{Colors.BLUE}Select RDR level (1-{len(fdr_options)}): {Colors.ENDC}")
 
                 # Handle empty input
                 if not choice.strip():
-                    print(f"{Colors.WARNING}⚠️  Please select an FDR level{Colors.ENDC}")
+                    print(f"{Colors.WARNING}⚠️  Please select an RDR level{Colors.ENDC}")
                     continue
 
                 choice_idx = int(choice) - 1
@@ -1686,7 +1686,7 @@ class PeptiDIACLI:
                 print(f"\n{Colors.FAIL}❌ Operation cancelled{Colors.ENDC}")
                 return None
         
-        # Get target FDR levels from the trained model
+        # Get target RDR levels from the trained model
         model_target_fdrs = []
         if 'config' in selected_model and 'target_fdr_levels' in selected_model['config']:
             model_target_fdrs = selected_model['config']['target_fdr_levels']
@@ -1695,13 +1695,13 @@ class PeptiDIACLI:
             model_target_fdrs = [result['Target_FDR'] for result in selected_model['metadata']['training_results']]
         
         if model_target_fdrs:
-            print(f"\n{Colors.BOLD}Target FDR Levels for Optimization:{Colors.ENDC}")
+            print(f"\n{Colors.BOLD}Target RDR Levels for Optimization:{Colors.ENDC}")
             print(f"{Colors.GREEN}Using model's training FDRs: {', '.join(map(str, model_target_fdrs))}%{Colors.ENDC}")
             target_fdrs = model_target_fdrs
         else:
             # Fallback to default if no model FDRs found
             default_targets = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-            print(f"\n{Colors.BOLD}Target FDR Levels for Optimization:{Colors.ENDC}")
+            print(f"\n{Colors.BOLD}Target RDR Levels for Optimization:{Colors.ENDC}")
             print(f"{Colors.WARNING}Model FDRs not found, using default: {', '.join(map(str, default_targets))}%{Colors.ENDC}")
             target_fdrs = default_targets
         
@@ -1714,7 +1714,7 @@ class PeptiDIACLI:
         
         print(f"\n{Colors.GREEN}✅ Test Configuration:{Colors.ENDC}")
         print(f"   🧪 Test Method: {test_method}")
-        print(f"   📊 Test FDR: {test_fdr}%")
+        print(f"   📊 Test RDR: {test_fdr}%")
         print(f"   🎯 Target FDRs: {', '.join(map(str, target_fdrs))}%")
         
         return config
@@ -1772,7 +1772,7 @@ class PeptiDIACLI:
             test_files = get_files_for_configured_method(test_config['test_method'], test_config['test_fdr'])
             
             if not test_files:
-                print(f"{Colors.FAIL}❌ No test data files found for {test_config['test_method']} at {test_config['test_fdr']}% FDR{Colors.ENDC}")
+                print(f"{Colors.FAIL}❌ No test data files found for {test_config['test_method']} at {test_config['test_fdr']}% RDR{Colors.ENDC}")
                 return False
             
             # Load and combine test data
@@ -1882,9 +1882,9 @@ class PeptiDIACLI:
             results = []
             for target_fdr in test_config['target_fdr_levels']:
                 try:
-                    # Get the trained threshold for this FDR level
+                    # Get the trained threshold for this RDR level
                     if target_fdr not in trained_thresholds:
-                        print(f"{Colors.WARNING}⚠️  No trained threshold for {target_fdr}% FDR, skipping...{Colors.ENDC}")
+                        print(f"{Colors.WARNING}⚠️  No trained threshold for {target_fdr}% RDR, skipping...{Colors.ENDC}")
                         continue
 
                     threshold = trained_thresholds[target_fdr]
@@ -1919,7 +1919,7 @@ class PeptiDIACLI:
                         predictions = peptide_predictions >= threshold
                         additional_peptides = predictions.sum()
 
-                        # Calculate actual FDR from ground truth
+                        # Calculate actual RDR from ground truth
                         tp = (peptide_labels & predictions).sum()
                         fp = (~peptide_labels & predictions).sum()
                         total_positives = tp + fp
@@ -1996,7 +1996,7 @@ class PeptiDIACLI:
                         results.append(result)
                         
                 except Exception as e:
-                    print(f"{Colors.WARNING}⚠️  Could not optimize for {target_fdr}% FDR: {e}{Colors.ENDC}")
+                    print(f"{Colors.WARNING}⚠️  Could not optimize for {target_fdr}% RDR: {e}{Colors.ENDC}")
             
             # Display results
             self._display_inference_results(results, selected_model, test_config, len(test_data), baseline_count, additional_candidates_pool, validated_additional_count, pool_validation_rate)
@@ -2021,11 +2021,11 @@ class PeptiDIACLI:
         # Model summary
         print(f"{Colors.BOLD}Model Used:{Colors.ENDC} {model_info['id']} ({model_info['type']})")
         print(f"{Colors.BOLD}Test Method:{Colors.ENDC} {test_config['test_method']}")
-        print(f"{Colors.BOLD}Test Data:{Colors.ENDC} {total_samples:,} samples at {test_config['test_fdr']}% FDR")
+        print(f"{Colors.BOLD}Test Data:{Colors.ENDC} {total_samples:,} samples at {test_config['test_fdr']}% RDR")
         
         # Add baseline peptides information if available
         if baseline_count > 0:
-            print(f"{Colors.BOLD}Baseline Peptides:{Colors.ENDC} {baseline_count:,} peptides at 1% FDR")
+            print(f"{Colors.BOLD}Baseline Peptides:{Colors.ENDC} {baseline_count:,} peptides at 1% RDR")
         
         # Add additional candidates pool information
         if additional_candidates_pool > 0:
@@ -2052,9 +2052,9 @@ class PeptiDIACLI:
         # Results table - match training format exactly
         if has_ground_truth:
             # Match training results format exactly
-            print(f"{Colors.BOLD}Target FDR Optimization Results:{Colors.ENDC}")
+            print(f"{Colors.BOLD}Target RDR Optimization Results:{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual FDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
+            header = f"{'Target RDR':<12} {'Threshold':<12} {'Additional':<12} {'Actual RDR':<12} {'Recovery %':<12} {'Increase %':<12} {'False Positives':<10} {'MCC':<10}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
             
@@ -2071,9 +2071,9 @@ class PeptiDIACLI:
             print(f"{Colors.CYAN}{'-'*140}{Colors.ENDC}")
         else:
             # Discovery mode - simplified table to match Streamlit
-            print(f"{Colors.BOLD}Target FDR Optimization Results (Discovery Mode):{Colors.ENDC}")
+            print(f"{Colors.BOLD}Target RDR Optimization Results (Discovery Mode):{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*60}{Colors.ENDC}")
-            header = f"{'Target FDR':<12} {'Threshold':<12} {'Additional':<12} {'Increase %':<12}"
+            header = f"{'Target RDR':<12} {'Threshold':<12} {'Additional':<12} {'Increase %':<12}"
             print(f"{Colors.BOLD}{header}{Colors.ENDC}")
             print(f"{Colors.CYAN}{'-'*60}{Colors.ENDC}")
             
@@ -2097,7 +2097,7 @@ class PeptiDIACLI:
         if has_ground_truth:
             print(f"\n{Colors.GREEN}💡 Note: Using trained thresholds. Ground truth used only for performance evaluation.{Colors.ENDC}")
         else:
-            print(f"\n{Colors.BLUE}💡 Note: Discovery mode - No ground truth available. Results show peptide discovery at target FDR levels{Colors.ENDC}")
+            print(f"\n{Colors.BLUE}💡 Note: Discovery mode - No ground truth available. Results show peptide discovery at target RDR levels{Colors.ENDC}")
     
     def _save_inference_results(self, results: List[Dict], model_info: Dict, test_config: Dict):
         """Save inference results to file."""

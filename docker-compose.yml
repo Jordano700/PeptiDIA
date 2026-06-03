@@ -1,0 +1,13 @@
+services:
+  peptidia:
+    build: .
+    image: peptidia:latest
+    ports:
+      # Host port is configurable: PEPTIDIA_PORT=8600 docker compose up
+      - "${PEPTIDIA_PORT:-8501}:8501"
+    volumes:
+      # Persist your datasets and results on the host (the bundled demo data
+      # and pre-trained model are included in the image by default).
+      - ./data:/app/data
+      - ./results:/app/results
+    restart: unless-stopped

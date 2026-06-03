@@ -7,15 +7,33 @@
 
 ## What is PeptiDIA?
 
-PeptiDIA helps scientists find **MORE peptides** in their DIA-NN mass spectrometry analyzed data using machine learning.
+PeptiDIA is a machine-learning framework that recovers additional peptides from fast-gradient DIA-NN data, increasing proteome depth with controlled reference-discordance rates and no changes to acquisition settings. It runs as a guided web app (and command-line tool).
 
-- 📊 **Web interface** - No coding required !
-- 🤖 **AI-powered** - Finds additional peptides at low error rates
-- 🔬 **Easy to use** - Upload data, get results
+## How it works
+
+<div align="center">
+  <img src="assets/peptidia_methodology.svg" alt="PeptiDIA methodology" width="760"/>
+</div>
+
+PeptiDIA uses **paired fast- and long-gradient acquisitions** of the same samples. Fast-gradient runs (high throughput) are searched in DIA-NN at relaxed FDR (20% / 50%) to expose a large candidate pool, while the matched long-gradient run (1% FDR) provides high-confidence **ground-truth labels**. An **XGBoost** classifier (87 DIA-NN and engineered features, with isotonic-calibrated probabilities) then recovers true peptides from new fast-gradient data at a user-controlled **reference-discordance rate (RDR)**.
 
 ## Quick Start (3 steps)
 
 📋 **For detailed instructions, see the [full PeptiDIA guide](docs/PEPTIDIA_FULL_GUIDE.md)**
+
+### Option A: Docker (zero setup, recommended)
+
+No Python needed, just [Docker](https://docs.docker.com/get-docker/):
+
+```bash
+git clone https://github.com/Jordano700/PeptiDIA.git
+cd PeptiDIA
+./run-docker.sh
+```
+
+**GPU (optional):** `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up`
+
+### Option B: Native install
 
 ### Step 1: Get PeptiDIA & Install
 ```bash
@@ -25,26 +43,11 @@ python scripts/install.py
 ```
 
 ### Step 2: Add Your DIA-NN Data
-Put your DIA-NN analyzed `.parquet` files in the `data/` folder with these **specific FDR levels**:
-```
-data/
-  YourDataset/
-    short_gradient/
-      FDR_1/          # DIA-NN results at 1% FDR
-        your_file.parquet
-      FDR_20/         # DIA-NN results at 20% FDR  
-        your_file.parquet
-      FDR_50/         # DIA-NN results at 50% FDR
-        your_file.parquet
-    long_gradient/  
-      FDR_1/          # DIA-NN results at 1% FDR only
-        your_file.parquet
-```
+Launch the app (Step 3), open **Setup Mode**, and drag-and-drop your DIA-NN analyzed `.parquet` files. The app names, organizes, and stores the dataset for you.
 
-**Important:** 
-- Data must be from **DIA-NN analysis** with FDR filtering set at these exact levels
-- Short gradient needs: **1%, 20%, and 50% FDR** results
-- Long gradient needs: **1% FDR** results only
+You provide DIA-NN results for:
+- **Short gradient** at 1%, 20%, and 50% FDR
+- **Long gradient** at 1% FDR (used as ground truth)
 
 ### Step 3: Run PeptiDIA
 
@@ -66,20 +69,11 @@ Opens automatically at `http://localhost:8501`
 
 ## Interface Modes 🎛️
 
-PeptiDIA has **3 simple modes** to guide you through the process:
-
-### 1. 🔧 **Setup Mode**
-- Configure your datasets very easily
-- Set up ground truth matching
-
-### 2. 🎯 **Training Mode** 
-- The machine learning models learn from your data
-- Shows training progress and results in a visualize and interactive format 
-
-### 3. 🚀 **Inference Mode**
-- Apply trained models to find new peptides
-- Get results rapdily
-- Download the results in a tabular format
+| Mode | What it does |
+|------|--------------|
+| 🔧 **Setup** | Add datasets: drag-and-drop your DIA-NN `.parquet` files and set up ground-truth matching |
+| 🎯 **Training** | Train a model on your data; results auto-save (table, feature importance, SHAP) |
+| 🚀 **Inference** | Recover peptides at your chosen RDR with the bundled **PeptiDIA Pre-trained (cross-tissue)** model or one you trained |
 
 
 ## Command Line Interface (CLI) 💻
@@ -98,6 +92,9 @@ For advanced users, PeptiDIA also provides a command-line interface:
 
 The web interface provides all functionality with a much more intuitive experience.
 
+## Data Availability
+The mass spectrometry proteomics data (six human and murine tissues) are deposited in the MassIVE repository under accession **MSV000102018**. The source code and the pre-trained cross-tissue model are available in this repository.
+
 ## License
 This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
 
@@ -105,18 +102,17 @@ This project is licensed under the MIT License – see the [LICENSE](LICENSE) fi
 If you use PeptiDIA in your research, please cite this work:
 
 ```
-Ortona, J. (2025). PeptiDIA: Machine Learning-Enhanced Peptide Discovery in DIA-NN Data. 
-GitHub repository: https://github.com/Jordano700/PeptiDIA
+Ortona, J., Leclercq, M., Roux-Dalvai, F., & Droit, A. (2026). PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics. https://github.com/Jordano700/PeptiDIA
 ```
 
 BibTeX format:
 ```bibtex
-@software{ortona2025peptidia,
-  author = {Ortona, Jordan},
-  title = {PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics},
-  year = {2025},
-  url = {https://github.com/Jordano700/PeptiDIA},
-  note = {Software for finding additional peptides in mass spectrometry data using AI}
+@software{ortona2026peptidia,
+  author = {Ortona, Jordan and Leclercq, Micka{\"e}l and Roux-Dalvai, Florence and Droit, Arnaud},
+  title  = {PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics},
+  year   = {2026},
+  url    = {https://github.com/Jordano700/PeptiDIA},
+  note   = {Software for recovering additional peptides in fast-gradient DIA-NN data using machine learning}
 }
 ```
 
@@ -126,5 +122,5 @@ BibTeX format:
 - 💡 Questions? Open an issue
 
 ---
-<sub>PeptiDIA v0.8</sub>
+<sub>PeptiDIA v1.0</sub>
 

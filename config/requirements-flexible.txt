@@ -1,0 +1,30 @@
+# PeptiDIA - flexible requirements (minimum tested versions)
+# Used as a fallback when the exact pins in requirements.txt have no wheels for
+# your Python (e.g., very new versions). pip resolves compatible versions for you.
+# For a fully reproducible environment, use requirements.txt (Python 3.12).
+
+# Core framework + UI components
+streamlit>=1.40
+streamlit-option-menu>=0.3.6
+streamlit-plotly-events>=0.0.6
+streamlit-aggrid>=1.0.5
+
+# Data handling
+pandas>=2.0
+numpy>=1.26
+pyarrow>=14
+
+# Visualization
+plotly>=5.20
+kaleido>=0.2.1
+matplotlib>=3.7
+seaborn>=0.13
+
+# Machine learning  (scikit-learn capped so the bundled pre-trained model loads cleanly)
+scikit-learn>=1.5,<1.8
+scipy>=1.11
+numba>=0.60
+shap>=0.44
+xgboost>=2.1
+openpyxl>=3.1
+xlsxwriter>=3.1

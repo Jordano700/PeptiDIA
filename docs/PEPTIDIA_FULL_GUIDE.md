@@ -30,7 +30,7 @@ PeptiDIA helps scientists discover more peptides in DIA-NN mass spectrometry dat
 ---
 
 ## 2. System Requirements
-- **Python**: 3.12.2 (recommended; 3.12.x required by installer)
+- **Python**: 3.10 or newer supported (3.12 recommended; the installer auto-uses flexible dependency versions on newer Python). Conda users get 3.12 automatically.
 - **OS**: Windows, macOS, or Linux
 - **RAM**: 8 GB+ recommended (depends on dataset size)
 - **Disk**: Sufficient space for datasets and results
@@ -133,22 +133,13 @@ python -m streamlit run src/peptidia/web/streamlit_app.py --server.port 8502
 ---
 
 ## 4. Dataset Preparation
-Organize your DIA-NN analyzed `.parquet` files in the `data/` folder with the following structure and FDR levels:
+Datasets are added from within the app — open **Setup Mode** and drag-and-drop your DIA-NN analyzed `.parquet` files. The app names the dataset, sorts the files into the correct structure, and records the metadata for you. No manual folder setup is required.
 
-```
-data/
-  YourDataset/
-    short_gradient/
-      FDR_1/      # DIA-NN results at 1% FDR (baseline)
-      FDR_20/     # DIA-NN results at 20% FDR (training)
-      FDR_50/     # DIA-NN results at 50% FDR (training)
-    long_gradient/
-      FDR_1/      # DIA-NN results at 1% FDR (ground truth)
-```
+Provide DIA-NN results for:
+- **Short gradient**: 1%, 20%, and 50% FDR
+- **Long gradient**: 1% FDR (used as ground truth)
 
-Notes:
-- Short gradient requires: 1%, 20%, 50% FDR
-- Long gradient requires: 1% FDR
+For advanced ground-truth matching (custom `dataset_info.json` strategies and filename handling), see [`data/README_ADD_DATASETS.md`](../data/README_ADD_DATASETS.md).
 
 ---
 
@@ -160,7 +151,8 @@ Notes:
 2. **Training Mode**
    - Train models and monitor metrics
 3. **Inference Mode**
-   - Apply trained models, view and download results
+   - Apply a model and view/download results
+   - Select the shipped **PeptiDIA Pre-trained (cross-tissue)** model to score data without training first, or pick one of your own trained models from the dropdown
 
 Start the web UI:
 ```bash

@@ -1,0 +1,170 @@
+{
+  "icon": "\ud83d\udd04",
+  "instrument": "Orbitrap Exploris 480 (DIA033)",
+  "description": "Ileon (Ileum)proteomics analysis - 10 different mouse intestinal samples",
+  "species": "mouse",
+  "available_icons": {
+    "_note": "Choose any of these icons for your dataset by copying the emoji to the 'icon' field above",
+    "scientific_research": [
+      "\u2697\ufe0f",
+      "\ud83d\udcca",
+      "\ud83e\uddea",
+      "\ud83d\udd2c",
+      "\ud83d\udca1",
+      "\ud83c\udfaf",
+      "\ud83d\udd0d",
+      "\ud83d\udcc8",
+      "\ud83e\uddec",
+      "\ud83d\udd2c"
+    ],
+    "cardiovascular": [
+      "\u2764\ufe0f",
+      "\ud83e\udec0",
+      "\ud83e\ude78",
+      "\ud83e\udef8",
+      "\ud83d\udc93",
+      "\ud83d\udc97",
+      "\ud83d\udc96",
+      "\ud83d\udc94",
+      "\ud83d\udc89",
+      "\ud83e\ude79"
+    ],
+    "digestive_system": [
+      "\ud83e\uddb7",
+      "\ud83d\udc44",
+      "\ud83e\udec3",
+      "\ud83d\udd04",
+      "\ud83c\udf00",
+      "\ud83d\udfe1",
+      "\ud83d\udfe4",
+      "\ud83d\udfe0",
+      "\u26aa",
+      "\ud83d\udd35"
+    ],
+    "respiratory": [
+      "\ud83e\udec1",
+      "\ud83d\udca8",
+      "\ud83c\udf2c\ufe0f",
+      "\ud83e\udee7",
+      "\ud83d\udcad",
+      "\u2601\ufe0f",
+      "\ud83c\udf2a\ufe0f",
+      "\ud83c\udf88",
+      "\ud83d\udd2e",
+      "\ud83d\udc8e"
+    ],
+    "nervous_system": [
+      "\ud83e\udde0",
+      "\ud83e\udd2f",
+      "\ud83d\udcad",
+      "\u26a1",
+      "\ud83d\udd0c",
+      "\ud83d\udca1",
+      "\ud83c\udfaf",
+      "\ud83e\udde9",
+      "\ud83d\udd17",
+      "\u2b50"
+    ],
+    "musculoskeletal": [
+      "\ud83e\uddb4",
+      "\ud83d\udcaa",
+      "\ud83d\udd90\ufe0f",
+      "\ud83e\uddb5",
+      "\ud83e\uddb6",
+      "\ud83d\udc4a",
+      "\u270b",
+      "\ud83e\udd1d",
+      "\ud83c\udfc3",
+      "\ud83e\uddd8"
+    ],
+    "organs_tissues": [
+      "\ud83e\uddec",
+      "\ud83e\udda0",
+      "\ud83e\uddeb",
+      "\ud83d\udd2c",
+      "\ud83c\udf31",
+      "\ud83c\udf43",
+      "\ud83c\udf3f",
+      "\ud83c\udf3e",
+      "\ud83c\udf33",
+      "\ud83c\udf32"
+    ],
+    "metabolic_endocrine": [
+      "\ud83e\uddc8",
+      "\ud83e\udd5c",
+      "\ud83e\uded2",
+      "\ud83e\udd51",
+      "\ud83e\udde0",
+      "\u2696\ufe0f",
+      "\ud83d\udd25",
+      "\u2744\ufe0f",
+      "\ud83c\udf21\ufe0f",
+      "\ud83d\udcca"
+    ],
+    "immune_blood": [
+      "\ud83e\ude78",
+      "\ud83e\udda0",
+      "\ud83d\udc89",
+      "\ud83d\udee1\ufe0f",
+      "\u2694\ufe0f",
+      "\ud83e\uddec",
+      "\ud83d\udd34",
+      "\ud83d\udfe1",
+      "\u26aa",
+      "\ud83d\udd35"
+    ],
+    "instrument_types": [
+      "\u26a1",
+      "\ud83d\ude80",
+      "\ud83d\udc8e",
+      "\ud83d\udcc8",
+      "\ud83d\udd0b",
+      "\u2699\ufe0f",
+      "\ud83d\udd27",
+      "\ud83d\udee0\ufe0f",
+      "\ud83d\udce1",
+      "\ud83c\udf9b\ufe0f"
+    ],
+    "general_lab": [
+      "\ud83e\udd7c",
+      "\ud83d\udccb",
+      "\ud83e\uddee",
+      "\ud83d\udcd0",
+      "\ud83d\udcbb",
+      "\ud83d\udcdd",
+      "\ud83d\udcca",
+      "\ud83d\udcc8",
+      "\ud83d\udcc9",
+      "\ud83d\udccc"
+    ],
+    "data_analysis": [
+      "\ud83d\udcca",
+      "\ud83d\udcc8",
+      "\ud83d\udcc9",
+      "\ud83d\udcb9",
+      "\ud83d\udd22",
+      "\ud83d\udccb",
+      "\ud83d\udcdd",
+      "\ud83d\udcbb",
+      "\ud83d\udda5\ufe0f",
+      "\u2328\ufe0f"
+    ]
+  },
+  "ground_truth_mapping": {
+    "_strategy": "direct_mapping",
+    "_direct_rules": {
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_676_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_676_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_677_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_677_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_678_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_678_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_679_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_679_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_680_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_680_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_681_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_681_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_682_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_682_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_683_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_683_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_684_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_684_01",
+      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_685_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_685_01"
+    },
+    "_file_mode": "individual",
+    "_note": "Direct filename mapping for Ileon methods (individual files)"
+  }
+}

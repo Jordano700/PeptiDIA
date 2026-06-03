@@ -1,0 +1,38 @@
+{
+  "icon": "🫒",
+  "instrument": "Orbitrap Exploris 480 (DIA033)",
+  "description": "Foie (liver) proteomics analysis - 10 different mouse liver samples",
+  "species": "mouse",
+  "available_icons": {
+    "_note": "Choose any of these icons for your dataset by copying the emoji to the 'icon' field above",
+    "scientific_research": ["⚗️", "📊", "🧪", "🔬", "💡", "🎯", "🔍", "📈", "🧬", "🔬"],
+    "cardiovascular": ["❤️", "🫀", "🩸", "🫸", "💓", "💗", "💖", "💔", "💉", "🩹"],
+    "digestive_system": ["🦷", "👄", "🫃", "🔄", "🌀", "🟡", "🟤", "🟠", "⚪", "🔵"],
+    "respiratory": ["🫁", "💨", "🌬️", "🫧", "💭", "☁️", "🌪️", "🎈", "🔮", "💎"],
+    "nervous_system": ["🧠", "🤯", "💭", "⚡", "🔌", "💡", "🎯", "🧩", "🔗", "⭐"],
+    "musculoskeletal": ["🦴", "💪", "🖐️", "🦵", "🦶", "👊", "✋", "🤝", "🏃", "🧘"],
+    "organs_tissues": ["🧬", "🦠", "🧫", "🔬", "🌱", "🍃", "🌿", "🌾", "🌳", "🌲"],
+    "metabolic_endocrine": ["🧈", "🥜", "🫒", "🥑", "🧠", "⚖️", "🔥", "❄️", "🌡️", "📊"],
+    "immune_blood": ["🩸", "🦠", "💉", "🛡️", "⚔️", "🧬", "🔴", "🟡", "⚪", "🔵"],
+    "instrument_types": ["⚡", "🚀", "💎", "📈", "🔋", "⚙️", "🔧", "🛠️", "📡", "🎛️"],
+    "general_lab": ["🥼", "📋", "🧮", "📐", "💻", "📝", "📊", "📈", "📉", "📌"],
+    "data_analysis": ["📊", "📈", "📉", "💹", "🔢", "📋", "📝", "💻", "🖥️", "⌨️"]
+  },
+  "ground_truth_mapping": {
+    "_strategy": "direct_mapping",
+    "_direct_rules": {
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_676_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_676_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_677_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_677_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_678_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_678_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_679_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_679_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_680_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_680_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_681_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_681_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_682_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_682_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_683_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_683_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_684_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_684_01",
+      "Foie_20250728_RD201_EXB_EV1107_300SPD_Foie_685_01": "Foie_20250729_RD201_EXB_EV1137_30SPD_Foie_685_01"
+    },
+    "_file_mode": "individual",
+    "_note": "Direct filename mapping for Foie methods (individual files)"
+  }
+}

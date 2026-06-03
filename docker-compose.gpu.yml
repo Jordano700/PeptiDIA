@@ -1,0 +1,17 @@
+# GPU override - use together with the base compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# Requires an NVIDIA GPU and the NVIDIA Container Toolkit installed on the host:
+#   sudo apt-get install -y nvidia-container-toolkit
+#   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
+#
+# Without this override, PeptiDIA runs on CPU. XGBoost auto-detects the GPU at runtime.
+services:
+  peptidia:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

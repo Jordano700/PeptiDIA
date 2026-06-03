@@ -1,0 +1,8 @@
+.git
+peptidia_env
+**/__pycache__
+**/*.pyc
+results
+history
+.streamlit/secrets.toml
+*.bak

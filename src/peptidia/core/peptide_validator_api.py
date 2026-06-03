@@ -159,15 +159,43 @@ class PeptideValidatorAPI:
             'feature_mode': 'peptidia'  # 'peptidia' (87 features) or 'full' (extended for PTM/specialized data)
         }
 
-        # PeptiDIA mode: Curated 42 DIA-NN features with non-zero importance (87 total with engineered)
-        self._peptidia_diann_features = {
-            # Quality Metrics (20)
+        # DIA-NN feature groups used by Streamlit/CLI toggles.
+        self._quality_metric_features = {
+            'GG.Q.Value', 'Q.Value', 'PEP', 'PG.Q.Value', 'PG.PEP', 'Global.Q.Value',
+            'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value',
+            'Quantity.Quality', 'PG.MaxLFQ.Quality', 'Genes.MaxLFQ.Quality',
+            'Genes.MaxLFQ.Unique.Quality', 'Proteotypic', 'Evidence', 'Mass.Evidence',
+            'Channel.Evidence', 'PG.MaxLFQ', 'Genes.MaxLFQ', 'Genes.MaxLFQ.Unique'
+        }
+        self._library_diann_features = {
+            'Precursor.Lib.Index',
+            'Lib.Q.Value', 'Lib.PG.Q.Value', 'Lib.PTM.Site.Confidence', 'Lib.Peptidoform.Q.Value',
+            'Translated.Q.Value', 'Channel.Q.Value'
+        }
+        self._ms_diann_features = {
+            'RT', 'iRT', 'Predicted.RT', 'Predicted.iRT', 'RT.Start', 'RT.Stop',
+            'Precursor.Mz', 'Precursor.Charge', 'Best.Fr.Mz', 'Best.Fr.Mz.Delta',
+            'Ms1.Apex.Mz.Delta', 'Ms1.Area', 'Ms1.Apex.Area', 'Precursor.Quantity',
+            'Precursor.Normalised', 'Ms1.Normalised', 'FWHM', 'Ms1.Profile.Corr',
+            'Ms1.Total.Signal.Before', 'Ms1.Total.Signal.After', 'iIM',
+            'PTM.Site.Confidence', 'Peptidoform.Q.Value',
+            'Normalisation.Factor', 'Normalisation.Noise', 'Empirical.Quality',
+            'PG.TopN', 'Genes.TopN', 'Ms2.Area', 'Peak.Height',
+            'Ion.Mobility', 'CCS', 'IM', 'Predicted.IM', 'Predicted.iIM'
+        }
+
+        # PeptiDIA mode: Curated DIA-NN features with non-zero importance (87 total with engineered).
+        self._peptidia_diann_features = (
+            self._quality_metric_features
+            | self._ms_diann_features
+            | self._library_diann_features
+        ) & {
+            # PeptiDIA DIA-NN subset
             'GG.Q.Value', 'Q.Value', 'PEP', 'PG.Q.Value', 'PG.PEP', 'Global.Q.Value',
             'Global.PG.Q.Value', 'Global.Peptidoform.Q.Value', 'Protein.Q.Value',
             'Quantity.Quality', 'PG.MaxLFQ.Quality', 'Genes.MaxLFQ.Quality',
             'Genes.MaxLFQ.Unique.Quality', 'Proteotypic', 'Evidence', 'Mass.Evidence',
             'Channel.Evidence', 'PG.MaxLFQ', 'Genes.MaxLFQ', 'Genes.MaxLFQ.Unique',
-            # MS/Chromatography (22)
             'RT', 'iRT', 'Predicted.RT', 'Predicted.iRT', 'RT.Start', 'RT.Stop',
             'Precursor.Mz', 'Precursor.Charge', 'Best.Fr.Mz', 'Best.Fr.Mz.Delta',
             'Ms1.Apex.Mz.Delta', 'Ms1.Area', 'Ms1.Apex.Area', 'Precursor.Quantity',
@@ -296,7 +324,7 @@ class PeptideValidatorAPI:
             results_dir = os.path.abspath(results_dir)
             
             os.makedirs(results_dir, exist_ok=True)
-            for subdir in ['plots', 'tables', 'feature_analysis', 'raw_data']:
+            for subdir in ['tables', 'feature_analysis']:
                 os.makedirs(f"{results_dir}/{subdir}", exist_ok=True)
             
             # Progress tracking
@@ -778,8 +806,10 @@ class PeptideValidatorAPI:
         
         all_train_data = pd.concat(train_data, ignore_index=True)
         
-        # Label training data using method-specific ground truth
-        y_train = []
+        # Label training data using method-specific ground truth.
+        # IMPORTANT: assign labels by DataFrame index to preserve row/label alignment
+        # across mixed method + FDR concatenation orders.
+        y_train = pd.Series(index=all_train_data.index, dtype='int8')
         
         # Group by source method for efficient labeling
         for method in all_train_data['source_method'].unique():
@@ -790,11 +820,12 @@ class PeptideValidatorAPI:
             # Use the ground truth mapping to find the best matching ground truth method
             method_ground_truth = self._load_ground_truth_peptides(method)
             
-            # Label peptides for this method
-            method_labels = method_peptides.isin(method_ground_truth).astype(int)
-            y_train.extend(method_labels.tolist())
+            # Label peptides for this method and write back by mask/index
+            y_train.loc[method_mask] = method_peptides.isin(method_ground_truth).astype('int8').values
         
-        y_train = pd.Series(y_train)
+        # Safety check: every training row must have a label
+        if y_train.isna().any():
+            raise RuntimeError("Internal label alignment error: some training rows were not labeled")
         
         print(f"Training data summary:")
         print(f"  Total samples: {len(all_train_data):,}")
@@ -896,6 +927,14 @@ class PeptideValidatorAPI:
             'actual_fdr': naive_actual_fdr
         }
     
+    def _is_feature_enabled_by_group(self, feature_name: str) -> bool:
+        """Apply user-selected feature group switches to a DIA-NN feature name."""
+        if feature_name in self._quality_metric_features:
+            return self.feature_selection.get('use_diann_quality', True)
+        if feature_name in self._library_diann_features or feature_name.startswith('Lib.'):
+            return self.feature_selection.get('use_library_features', True)
+        return self.feature_selection.get('use_ms_features', True)
+
     def _make_advanced_features(self, df: pd.DataFrame, training_features=None) -> pd.DataFrame:
         """Create comprehensive feature table.
 
@@ -908,6 +947,9 @@ class PeptideValidatorAPI:
         # Determine feature mode
         feature_mode = self.feature_selection.get('feature_mode', 'peptidia')
         leakage_cols = {c.lower() for c in getattr(self, '_leakage_guard_columns', {'source_fdr'})}
+        excluded_cols = {
+            str(c).lower() for c in self.feature_selection.get('excluded_features', []) if str(c).strip()
+        }
 
         # Build allowed features based on mode
         peptidia_features = getattr(self, '_peptidia_diann_features', set())
@@ -921,37 +963,55 @@ class PeptideValidatorAPI:
         for col in df.columns:
             if col.lower() in leakage_cols:
                 continue
+            if col.lower() in excluded_cols:
+                continue
             if col in allowed_features:
+                if not self._is_feature_enabled_by_group(col):
+                    continue
                 if df[col].dtype in ['int64', 'float64', 'int32', 'float32', 'float16', 'int16', 'int8', 'uint8', 'uint16', 'uint32', 'uint64']:
                     feat_map[col] = pd.to_numeric(df[col], errors='coerce')
 
         # Add engineered log features (extended in full mode)
-        log_cols = self.engineer_log if feature_mode == 'peptidia' else {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}
-        for col in log_cols:
-            if col in df.columns:
-                vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                feat_map[f'log_{col}'] = np.log1p(np.maximum(vals, 0))
+        if self.feature_selection.get('use_ms_features', True):
+            log_cols = self.engineer_log if feature_mode == 'peptidia' else {'Precursor.Quantity', 'Ms1.Area', 'Ms2.Area', 'Peak.Height'}
+            for col in log_cols:
+                engineered_name = f'log_{col}'
+                if engineered_name.lower() in excluded_cols:
+                    continue
+                if col in df.columns:
+                    vals = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                    feat_map[engineered_name] = np.log1p(np.maximum(vals, 0))
 
         # Add sequence-based features (41 features: 1 length + 20 counts + 20 frequencies)
         if self.feature_selection.get('use_sequence_features', True) and 'Stripped.Sequence' in df.columns:
             sequences = df['Stripped.Sequence'].astype(str)
             seq_len = sequences.str.len()
-            feat_map['sequence_length'] = seq_len
+            if 'sequence_length' not in excluded_cols:
+                feat_map['sequence_length'] = seq_len
 
             # Amino acid composition features - ALL 20 amino acids
             for aa in ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']:
+                count_name = f'aa_count_{aa}'
+                freq_name = f'aa_freq_{aa}'
+                if count_name.lower() in excluded_cols and freq_name.lower() in excluded_cols:
+                    continue
                 counts = sequences.str.count(aa)
-                feat_map[f'aa_count_{aa}'] = counts
+                if count_name.lower() not in excluded_cols:
+                    feat_map[count_name] = counts
                 # Avoid divide-by-zero; handled by fillna later
-                feat_map[f'aa_freq_{aa}'] = counts / seq_len.replace(0, np.nan)
+                if freq_name.lower() not in excluded_cols:
+                    feat_map[freq_name] = counts / seq_len.replace(0, np.nan)
 
         # Add z-score statistical features (extended in full mode)
         if self.feature_selection.get('use_statistical_features', True):
             zscore_cols = ['Ms1.Area', 'Precursor.Quantity'] if feature_mode == 'peptidia' else ['Ms1.Area', 'Ms2.Area', 'Peak.Height', 'Precursor.Quantity']
             for col in zscore_cols:
+                zscore_name = f'zscore_{col}'
+                if zscore_name.lower() in excluded_cols:
+                    continue
                 if col in df.columns:
                     vals = pd.to_numeric(df[col], errors='coerce')
-                    feat_map[f'zscore_{col}'] = (vals - vals.mean()) / (vals.std() + 1e-10)
+                    feat_map[zscore_name] = (vals - vals.mean()) / (vals.std() + 1e-10)
         
         # Ensure consistent columns with training data
         # Build DataFrame once to avoid fragmentation
@@ -1646,14 +1706,9 @@ class PeptideValidatorAPI:
         cbar.ax.tick_params(colors=MATPLOT_THEME['text'], labelsize=10)
         if cbar.outline is not None:
             cbar.outline.set_edgecolor(MATPLOT_THEME['border'])
-        plt.savefig(
-            f"{results_dir}/plots/comprehensive_analysis.png",
-            dpi=300,
-            bbox_inches='tight',
-            facecolor=MATPLOT_THEME['background']
-        )
-        plt.close()
-        
+        # Comprehensive overview figure is intentionally not saved (kept outputs minimal).
+        plt.close('all')
+
         # 2. Feature importance analysis (if model provided)
         if model is not None and X_test is not None:
             self._create_feature_importance_analysis(model, X_test, training_features, results_dir)
@@ -1820,10 +1875,10 @@ class PeptideValidatorAPI:
             'importance': importance
         }).sort_values('importance', ascending=True)
         
-        # Save feature importance CSV
-        feature_importance_df_sorted = feature_importance_df.sort_values('importance', ascending=False)
-        feature_importance_df_sorted.to_csv(f"{results_dir}/feature_analysis/feature_importance_full.csv", index=False)
-        
+        # Save feature importance CSV (small; powers the interactive in-app chart)
+        feature_importance_df.sort_values('importance', ascending=False).to_csv(
+            f"{results_dir}/feature_analysis/feature_importance_full.csv", index=False)
+
         # Plot top 20 features
         top_features = feature_importance_df.tail(20)
         
@@ -1930,144 +1985,34 @@ class PeptideValidatorAPI:
                     explainer = shap.TreeExplainer(base_model)
                     shap_values = explainer.shap_values(X_sample)
 
-                    # Calculate mean absolute SHAP values for feature importance
+                    # Publication-style SHAP beeswarm via matplotlib (no kaleido needed).
+                    # This is the only SHAP artifact we keep: shap_summary_beeswarm.png
+                    import matplotlib.pyplot as _plt
+                    _plt.figure()
+                    shap.summary_plot(shap_values, X_sample, max_display=20, show=False)
+                    _fig = _plt.gcf()
+                    # Remove the default title/axis text per request (no "Impact on Model ..." labels)
+                    if _fig.axes:
+                        _fig.axes[0].set_xlabel("")
+                    _fig.savefig(f"{results_dir}/feature_analysis/shap_summary_beeswarm.png",
+                                 dpi=200, bbox_inches='tight', facecolor='white')
+                    _plt.close(_fig)
+                    print("✅ SHAP beeswarm PNG created")
+
+                    # Small SHAP summary (KB) that powers the interactive in-app chart.
                     mean_shap_values = np.mean(shap_values, axis=0)
                     abs_mean_shap = np.abs(mean_shap_values)
-
-                    # Get top 15 features
                     top_indices = np.argsort(abs_mean_shap)[-15:]
-                    top_features = [training_features[i] for i in top_indices]
-                    top_shap_values = mean_shap_values[top_indices]
-
-                    # Create Plotly bar chart with diverging colors
-                    import plotly.graph_objects as go
-
-                    # Determine colors: positive values (green/blue), negative values (red/orange)
-                    colors = []
-                    max_abs_val = max(abs(top_shap_values)) if len(top_shap_values) > 0 else 1
-
-                    for val in top_shap_values:
-                        if val >= 0:
-                            # Positive values: scale from light blue to dark blue
-                            intensity = abs(val) / max_abs_val if max_abs_val > 0 else 0
-                            colors.append(f'rgba(0, {int(100 + 100*intensity)}, {int(200 + 55*intensity)}, 0.8)')
-                        else:
-                            # Negative values: scale from light red to dark red
-                            intensity = abs(val) / max_abs_val if max_abs_val > 0 else 0
-                            colors.append(f'rgba({int(200 + 55*intensity)}, {int(100 + 100*intensity)}, 0, 0.8)')
-
-                    # Create the bar chart
-                    fig = go.Figure()
-
-                    fig.add_trace(go.Bar(
-                        x=top_shap_values,
-                        y=top_features,
-                        orientation='h',
-                        marker=dict(
-                            color=colors,
-                            line=dict(color='rgba(50, 50, 50, 0.8)', width=1)
-                        ),
-                        text=[f'{val:.4f}' for val in top_shap_values],
-                        textposition='outside',
-                        textfont=dict(size=10)
-                    ))
-
-                    # Add vertical line at x=0
-                    fig.add_vline(x=0, line_width=2, line_color="black", line_dash="solid")
-
-                    # Update layout
-                    fig.update_layout(
-                        title=dict(
-                            text="Feature Impact Analysis (SHAP Values)",
-                            font=dict(size=16, family="Arial Black"),
-                            x=0.5
-                        ),
-                        xaxis=dict(
-                            title="Mean SHAP Value",
-                            title_font=dict(size=14),
-                            gridcolor='lightgray',
-                            gridwidth=1
-                        ),
-                        yaxis=dict(
-                            title="Features",
-                            title_font=dict(size=14),
-                            tickfont=dict(size=11)
-                        ),
-                        showlegend=False,
-                        plot_bgcolor='white',
-                        paper_bgcolor='white',
-                        height=600,
-                        width=900,
-                        margin=dict(l=200, r=100, t=80, b=60)
-                    )
-
-                    # Add annotations
-                    if len(top_shap_values) > 0 and min(top_shap_values) < 0:
-                        fig.add_annotation(
-                            x=min(top_shap_values) * 0.7,
-                            y=len(top_features) * 0.95,
-                            text="← Decreases<br>Prediction",
-                            showarrow=False,
-                            font=dict(size=12, color="darkred"),
-                            bgcolor="rgba(255, 200, 200, 0.8)",
-                            bordercolor="darkred",
-                            borderwidth=1
-                        )
-
-                    if len(top_shap_values) > 0 and max(top_shap_values) > 0:
-                        fig.add_annotation(
-                            x=max(top_shap_values) * 0.7,
-                            y=len(top_features) * 0.95,
-                            text="Increases →<br>Prediction",
-                            showarrow=False,
-                            font=dict(size=12, color="darkblue"),
-                            bgcolor="rgba(200, 200, 255, 0.8)",
-                            bordercolor="darkblue",
-                            borderwidth=1
-                        )
-
-                    # Save as HTML
-                    fig.write_html(f"{results_dir}/feature_analysis/shap_importance_plotly.html")
-
-                    # Save as PNG (requires kaleido >= 1.0.0 to avoid deprecation warnings)
-                    try:
-                        try:
-                            # Prefer importlib.metadata (Py>=3.8) to check kaleido version
-                            import importlib.metadata as _imm
-                            _k_ver = _imm.version('kaleido')
-                        except Exception:
-                            _k_ver = None
-
-                        def _version_tuple(v):
-                            try:
-                                return tuple(int(p) for p in str(v).split('.')[:2])
-                            except Exception:
-                                return (0, 0)
-
-                        if _k_ver is None or _version_tuple(_k_ver) < (1, 0):
-                            print("ℹ️ Skipping PNG export: kaleido < 1.0.0 (to avoid deprecation warnings)")
-                        else:
-                            fig.write_image(
-                                f"{results_dir}/feature_analysis/shap_importance_plotly.png",
-                                width=900,
-                                height=600,
-                                scale=2
-                            )
-                    except Exception:
-                        print("⚠️ Could not save PNG (kaleido unavailable or misconfigured)")
-
-                    # Save simplified SHAP data
                     shap_data = {
-                        'feature_names': top_features,
-                        'mean_shap_values': top_shap_values.tolist(),
-                        'abs_importance': abs_mean_shap[top_indices].tolist()
+                        'feature_names': [training_features[i] for i in top_indices],
+                        'mean_shap_values': mean_shap_values[top_indices].tolist(),
+                        'abs_importance': abs_mean_shap[top_indices].tolist(),
                     }
-
                     with open(f"{results_dir}/feature_analysis/shap_data.json", 'w') as f:
                         json.dump(shap_data, f, indent=2)
-
-                    print("✅ Lightweight SHAP analysis completed successfully")
                     shap_output_written = True
+                    return
+
             
         except Exception as e:
             print(f"⚠️ SHAP analysis failed: {e}")
@@ -2075,105 +2020,19 @@ class PeptideValidatorAPI:
             import traceback
             traceback.print_exc()
 
-        # Fallback: if SHAP output was not written, create a placeholder using model importances
+        # If SHAP failed, the run simply has no beeswarm figure; the results table
+        # and the feature-importance plot are still produced. No placeholder file.
         if not shap_output_written:
-            try:
-                print("ℹ️ Falling back to feature importance based SHAP placeholder")
-                raw_importances = None
-                source_model = self._extract_xgboost_model(model)
-                if source_model is not None and hasattr(source_model, 'feature_importances_'):
-                    raw_importances = getattr(source_model, 'feature_importances_', None)
-                if raw_importances is None and hasattr(model, 'feature_importances_'):
-                    raw_importances = getattr(model, 'feature_importances_')
-                elif raw_importances is None and hasattr(model, 'named_estimators_') and isinstance(model.named_estimators_, dict):
-                    candidate = model.named_estimators_.get('xgb')
-                    if candidate is not None:
-                        raw_importances = getattr(candidate, 'feature_importances_', None)
-                if raw_importances is None and hasattr(model, 'calibrated_classifiers_'):
-                    for cc in getattr(model, 'calibrated_classifiers_', []):
-                        for attr in ('base_estimator', 'estimator'):
-                            base_est = getattr(cc, attr, None)
-                            if hasattr(base_est, 'feature_importances_'):
-                                raw_importances = base_est.feature_importances_
-                                break
-                        if raw_importances is not None:
-                            break
+            print("ℹ️ SHAP beeswarm not generated for this run")
 
-                if training_features is None or len(training_features) == 0:
-                    training_features = [f'feature_{i}' for i in range(len(raw_importances) if raw_importances is not None else 10)]
 
-                if raw_importances is not None:
-                    raw_importances = np.asarray(raw_importances)
-                    if raw_importances.ndim > 1:
-                        raw_importances = raw_importances.mean(axis=0)
-                else:
-                    raw_importances = np.zeros(len(training_features), dtype=float)
-
-                top_indices = np.argsort(raw_importances)[-15:] if len(raw_importances) >= 15 else np.arange(len(raw_importances))
-                top_features = [training_features[i] for i in top_indices]
-                top_importances = raw_importances[top_indices]
-                if len(top_features) == 0:
-                    top_features = training_features[:15]
-                    top_importances = np.zeros(len(top_features), dtype=float)
-
-                placeholder = {
-                    'feature_names': top_features,
-                    'mean_shap_values': top_importances.tolist(),
-                    'abs_importance': np.abs(top_importances).tolist()
-                }
-                with open(f"{results_dir}/feature_analysis/shap_data.json", 'w') as f:
-                    json.dump(placeholder, f, indent=2)
-                shap_output_written = True
-                print("✅ Wrote SHAP placeholder data (feature importances or zeros)")
-            except Exception as fallback_error:
-                print(f"⚠️ Could not write SHAP placeholder data: {fallback_error}")
-
-    
     def _save_results(self, analysis_results: Dict, results_dir: str):
         """Save comprehensive analysis results."""
         
-        # Save detailed results as CSV
+        # Save detailed results as CSV (the only persisted table)
         if 'results' in analysis_results and analysis_results['results']:
             results_df = pd.DataFrame(analysis_results['results'])
             results_df.to_csv(f"{results_dir}/tables/detailed_results.csv", index=False)
-        
-        # Save analysis summary as JSON
-        summary_data = {
-            'config': analysis_results['config'],
-            'summary': analysis_results['summary'],
-            'metadata': analysis_results['metadata']
-        }
-        
-        with open(f"{results_dir}/raw_data/analysis_summary.json", 'w') as f:
-            json.dump(summary_data, f, indent=2, default=str)
-        
-        # Save best results summary
-        if 'results' in analysis_results and analysis_results['results']:
-            summary_text = f"""
-🎯 PEPTIDE VALIDATION ANALYSIS SUMMARY
-================================================================================
-Analysis completed: {analysis_results['metadata']['analysis_timestamp']}
-
-📊 DATA SUMMARY:
-Baseline peptides: {analysis_results['summary']['baseline_peptides']:,}
-Ground truth peptides: {analysis_results['summary']['ground_truth_peptides']:,}
-Training samples: {analysis_results['summary']['training_samples_total']:,}
-  - Model trained on: {analysis_results['summary']['training_samples_model']:,} (all training data)
-  - Threshold calibration: {analysis_results['summary']['calibration_method']} (~{analysis_results['summary']['calibration_samples']:,} per fold)
-Test samples: {analysis_results['summary']['test_samples']:,}
-
-⚙️ CONFIGURATION:
-Training methods: {', '.join(analysis_results['config']['train_methods'])}
-Test method: {analysis_results['config']['test_method']}
-Training FDR levels: {', '.join(map(str, analysis_results['config']['train_fdr_levels']))}%
-Test FDR level: {analysis_results['config']['test_fdr']}%
-
-📁 Results saved to: {results_dir}
-================================================================================
-            """
-            
-            with open(f"{results_dir}/ANALYSIS_SUMMARY.txt", 'w') as f:
-                f.write(summary_text)
 
 # Convenience function for direct API usage
 def run_peptide_validation(train_methods: List[str],

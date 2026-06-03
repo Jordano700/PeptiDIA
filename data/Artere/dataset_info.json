@@ -1,0 +1,37 @@
+{
+  "icon": "🩸",
+  "instrument": "Orbitrap Exploris 480 (DIA046)",
+  "description": "Artere proteomics analysis - 10 different human arterial samples",
+  "available_icons": {
+    "_note": "Choose any of these icons for your dataset by copying the emoji to the 'icon' field above",
+    "scientific_research": ["⚗️", "📊", "🧪", "🔬", "💡", "🎯", "🔍", "📈", "🧬", "🔬"],
+    "cardiovascular": ["❤️", "🫀", "🩸", "🫷", "💓", "💗", "💖", "💔", "💉", "🩹"],
+    "digestive_system": ["🦷", "👄", "🫃", "🔄", "🌀", "🟡", "🟤", "🟠", "⚪", "🔵"],
+    "respiratory": ["🫁", "💨", "🌬️", "🫧", "💭", "☁️", "🌪️", "🎈", "🔮", "💎"],
+    "nervous_system": ["🧠", "🤯", "💭", "⚡", "🔌", "💡", "🎯", "🧩", "🔗", "⭐"],
+    "musculoskeletal": ["🦴", "💪", "🖐️", "🦵", "🦶", "👊", "✋", "🤝", "🏃", "🧘"],
+    "organs_tissues": ["🧬", "🦠", "🧫", "🔬", "🌱", "🍃", "🌿", "🌾", "🌳", "🌲"],
+    "metabolic_endocrine": ["🧈", "🥜", "🫒", "🥑", "🧠", "⚖️", "🔥", "❄️", "🌡️", "📊"],
+    "immune_blood": ["🩸", "🦠", "💉", "🛡️", "⚔️", "🧬", "🔴", "🟡", "⚪", "🔵"],
+    "instrument_types": ["⚡", "🚀", "💎", "📈", "🔋", "⚙️", "🔧", "🛠️", "📡", "🎛️"],
+    "general_lab": ["🥼", "📋", "🧮", "📐", "💻", "📝", "📊", "📈", "📉", "📌"],
+    "data_analysis": ["📊", "📈", "📉", "💹", "🔢", "📋", "📝", "💻", "🖥️", "⌨️"]
+  },
+  "ground_truth_mapping": {
+    "_strategy": "direct_mapping",
+    "_direct_rules": {
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_CTL_C139_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_CTL_C139_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_CTL_C158_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_CTL_C158_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_CTL_C46_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_CTL_C46_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_CTL_C55_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_CTL_C55_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_CTL_C57_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_CTL_C57_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_GC7_C60_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_GC7_C60_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_GC7_C91_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_GC7_C91_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_VEH_C142_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_VEH_C142_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_VEH_C60_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_VEH_C60_01",
+      "Artere_20250728_RD201_EXB_EV1107_300SPD_Artere_VEH_C91_01": "Artere_20250729_RD201_EXB_EV1137_30SPD_Artere_VEH_C91_01"
+    },
+    "_file_mode": "individual",
+    "_note": "Direct filename mapping for Artere methods (individual files)"
+  }
+}

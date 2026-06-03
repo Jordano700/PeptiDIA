@@ -1,101 +1,34 @@
-# Dataset files - users will add their own datasets
-# Keep folder structure but ignore actual data files
-data/**/*.parquet
-data/**/*.csv
-data/**/*.tsv
-data/**/*.xlsx
-data/**/*.png
-data/**/*.jpg
-data/**/*.jpeg
-data/**/*.json
-
-# EXCEPTION: Allow ASTRAL dataset (public PRIDE data for demo purposes)
-!data/ASTRAL/**/*
-
-# Allow .gitkeep files to preserve folder structure
-!data/**/.gitkeep
-
-# Project development files
-CLAUDE.md
-\n+# Local development scripts (never pushed)
-dev/**
-
-# Results, models, and run history - keep local only
-# Keep folder structure but ignore result files
-results/**/*
-!results/.gitkeep
-history/**/*
-!history/.gitkeep
-run_history/
-saved_models/
-fdr_results/
-ultra_low_fdr_results/
-*.json
-# Exception: Allow ASTRAL dataset configuration
-!data/ASTRAL/dataset_info.json
-
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+build/
+dist/
 
 # Virtual environments
 venv/
-ENV/
-env/
 .venv/
+env/
 peptidia_env/
 
-# Streamlit local settings
-.streamlit/
-
-# IDE files
+# OS / editors
+.DS_Store
+Thumbs.db
 .vscode/
 .idea/
 *.swp
-*.swo
 
-# OS files
-.DS_Store
-Thumbs.db
+# Streamlit local settings (keep shared theme)
+.streamlit/*
+!.streamlit/config.toml
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Your own datasets stay local (bundled demo sample is tracked explicitly)
+data/**/*.parquet
+data/**/*.tsv
+data/**/*.xlsx
 
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# Plots and generated images
-plots/
-*.png
-*.jpg
-*.jpeg
-*.pdf
-
-# GitHub workflows and settings
-.github/
-
-# Python version files
-.python-version
-runtime.txt
+# Run outputs (keep folder structure only)
+results/
+history/
+logs/
+.ipynb_checkpoints/

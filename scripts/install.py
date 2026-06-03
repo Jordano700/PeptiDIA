@@ -19,19 +19,25 @@ def print_header():
     print()
 
 def check_python_version():
-    """Require Python 3.12.x to match project environment."""
+    """Support Python 3.10+ (3.12 is the tested reference). Newer versions use flexible deps."""
     version = sys.version_info
-    if not (version.major == 3 and version.minor == 12):
-        print("❌ INCOMPATIBLE PYTHON VERSION FOR PeptiDIA")
-        print(f"   Current: Python {version.major}.{version.minor}.{version.micro}")
-        print("   Required: Python 3.12.x (recommended 3.12.2)")
+    ver_str = f"{version.major}.{version.minor}.{version.micro}"
+    if version.major != 3 or version.minor < 10:
+        print("❌ PeptiDIA needs Python 3.10 or newer (3.12 recommended)")
+        print(f"   Current: Python {ver_str}")
         print()
-        print("💡 Options:")
-        print("   - Use Conda: conda env create -f config/environment.yml && conda activate peptidia")
-        print("   - Or install Python 3.12.2 (pyenv recommended) and rerun: python install.py")
+        print("💡 Easiest fix - use Conda (creates a working 3.12 environment):")
+        print("   conda env create -f config/environment.yml && conda activate peptidia")
         return False
-    
-    print(f"✅ Python {version.major}.{version.minor}.{version.micro} - Compatible!")
+
+    if version.minor == 12:
+        print(f"✅ Python {ver_str} - Compatible!")
+    elif version.minor < 12:
+        print(f"✅ Python {ver_str} detected (3.12 is the tested reference). Continuing...")
+    else:
+        print(f"⚠️  Python {ver_str} is newer than the tested range - PeptiDIA will install with")
+        print("    flexible dependency versions. If anything fails, use Conda:")
+        print("    conda env create -f config/environment.yml")
     return True
 
 def create_virtual_environment():
@@ -96,25 +102,35 @@ def install_dependencies(python_exe):
     
     print("📦 Installing missing dependencies...")
     
+    # Upgrade pip first (non-fatal if it fails)
     try:
-        # Upgrade pip first
-        subprocess.check_call([
-            str(python_exe), "-m", "pip", "install", "--upgrade", "pip"
-        ])
-        
-        req_file = "config/requirements.txt"
-        print(f"   Using {req_file}")
-        
-        subprocess.check_call([
-            str(python_exe), "-m", "pip", "install", "-r", req_file
-        ])
-        
-        print("✅ All dependencies installed successfully!")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Installation failed: {e}")
-        print("💡 Check your internet connection and try again")
-        return False
+        subprocess.check_call([str(python_exe), "-m", "pip", "install", "--upgrade", "pip"])
+    except subprocess.CalledProcessError:
+        print("⚠️  Could not upgrade pip; continuing with the existing version.")
+
+    pinned = "config/requirements.txt"
+    flexible = "config/requirements-flexible.txt"
+
+    # On Python newer than the tested 3.12, the exact pins may lack wheels, so try
+    # flexible first. Otherwise use the tested pins and fall back to flexible on failure.
+    order = [flexible, pinned] if sys.version_info[:2] > (3, 12) else [pinned, flexible]
+
+    for i, req_file in enumerate(order):
+        if not os.path.exists(req_file):
+            continue
+        label = "tested versions" if req_file == pinned else "flexible versions"
+        print(f"   Installing dependencies ({label}) from {req_file}")
+        try:
+            subprocess.check_call([str(python_exe), "-m", "pip", "install", "-r", req_file])
+            print("✅ All dependencies installed successfully!")
+            return True
+        except subprocess.CalledProcessError as e:
+            if i + 1 < len(order):
+                print(f"⚠️  Install from {req_file} failed; retrying with {order[i + 1]} ...")
+            else:
+                print(f"❌ Installation failed: {e}")
+                print("💡 Try Conda instead: conda env create -f config/environment.yml")
+    return False
 
 def test_installation(python_exe):
     """Test that PeptiDIA can start."""

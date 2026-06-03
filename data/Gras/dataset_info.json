@@ -1,0 +1,37 @@
+{
+  "icon": "🟡",
+  "instrument": "Orbitrap Exploris 480",
+  "description": "Gras proteomics analysis (DIA047) - 10 different human adipose tissue samples ",
+  "available_icons": {
+    "_note": "Choose any of these icons for your dataset by copying the emoji to the 'icon' field above",
+    "scientific_research": ["⚗️", "📊", "🧪", "🔬", "💡", "🎯", "🔍", "📈", "🧬", "🔬"],
+    "cardiovascular": ["❤️", "🫀", "🩸", "🫸", "💓", "💗", "💖", "💔", "💉", "🩹"],
+    "digestive_system": ["🦷", "👄", "🫃", "🔄", "🌀", "🟡", "🟤", "🟠", "⚪", "🔵"],
+    "respiratory": ["🫁", "💨", "🌬️", "🫧", "💭", "☁️", "🌪️", "🎈", "🔮", "💎"],
+    "nervous_system": ["🧠", "🤯", "💭", "⚡", "🔌", "💡", "🎯", "🧩", "🔗", "⭐"],
+    "musculoskeletal": ["🦴", "💪", "🖐️", "🦵", "🦶", "👊", "✋", "🤝", "🏃", "🧘"],
+    "organs_tissues": ["🧬", "🦠", "🧫", "🔬", "🌱", "🍃", "🌿", "🌾", "🌳", "🌲"],
+    "metabolic_endocrine": ["🧈", "🥜", "🫒", "🥑", "🧠", "⚖️", "🔥", "❄️", "🌡️", "📊"],
+    "immune_blood": ["🩸", "🦠", "💉", "🛡️", "⚔️", "🧬", "🔴", "🟡", "⚪", "🔵"],
+    "instrument_types": ["⚡", "🚀", "💎", "📈", "🔋", "⚙️", "🔧", "🛠️", "📡", "🎛️"],
+    "general_lab": ["🥼", "📋", "🧮", "📐", "💻", "📝", "📊", "📈", "📉", "📌"],
+    "data_analysis": ["📊", "📈", "📉", "💹", "🔢", "📋", "📝", "💻", "🖥️", "⌨️"]
+  },
+  "ground_truth_mapping": {
+    "_strategy": "direct_mapping",
+    "_direct_rules": {
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A122_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A122_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A166_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A166_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A170_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A170_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A171_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A171_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A189_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A189_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A190_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A190_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A250_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A250_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_CTL_A262_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_CTL_A262_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_PAH_A08_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_PAH_A08_01",
+      "Gras_20250728_RD201_EXB_EV1107_300SPD_Gras_PAH_A83_01": "Gras_20250729_RD201_EXB_EV1137_30SPD_Gras_PAH_A83_01"
+    },
+    "_file_mode": "individual",
+    "_note": "Direct filename mapping for Gras methods (individual files)"
+  }
+}
