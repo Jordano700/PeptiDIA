@@ -1,6 +1,6 @@
 {
   "icon": "\ud83d\udd04",
-  "instrument": "Orbitrap Exploris 480 (DIA033)",
+  "instrument": "Orbitrap Exploris 480",
   "description": "Ileon (Ileum)proteomics analysis - 10 different mouse intestinal samples",
   "species": "mouse",
   "available_icons": {
@@ -153,16 +153,16 @@
   "ground_truth_mapping": {
     "_strategy": "direct_mapping",
     "_direct_rules": {
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_676_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_676_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_677_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_677_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_678_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_678_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_679_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_679_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_680_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_680_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_681_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_681_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_682_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_682_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_683_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_683_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_684_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_684_01",
-      "Ileon_20250728_RD201_EXB_EV1107_300SPD_Ileon_685_01": "Ileon_20250729_RD201_EXB_EV1137_30SPD_Ileon_685_01"
+      "Ileon_sample01": "Ileon_sample01",
+      "Ileon_sample02": "Ileon_sample02",
+      "Ileon_sample03": "Ileon_sample03",
+      "Ileon_sample04": "Ileon_sample04",
+      "Ileon_sample05": "Ileon_sample05",
+      "Ileon_sample06": "Ileon_sample06",
+      "Ileon_sample07": "Ileon_sample07",
+      "Ileon_sample08": "Ileon_sample08",
+      "Ileon_sample09": "Ileon_sample09",
+      "Ileon_sample10": "Ileon_sample10"
     },
     "_file_mode": "individual",
     "_note": "Direct filename mapping for Ileon methods (individual files)"

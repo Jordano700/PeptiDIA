@@ -91,6 +91,6 @@
     "zscore_Precursor.Quantity"
   ],
   "save_timestamp": "2026-06-03T09:57:10.804312",
-  "model_path": "/home/jordano/PeptiDIA/models/cross_tissue_all/saved_models/trained_model.joblib",
-  "features_path": "/home/jordano/PeptiDIA/models/cross_tissue_all/saved_models/training_features.joblib"
+  "model_path": "models/cross_tissue_all/saved_models/trained_model.joblib",
+  "features_path": "models/cross_tissue_all/saved_models/training_features.joblib"
 }

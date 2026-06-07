@@ -3865,7 +3865,6 @@ def display_export_options(results, include_general_exports: bool = True):
                                     logo_path = None
                                     try:
                                         candidate_paths = [
-                                            '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
                                             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
                                         ]
                                         for _p in candidate_paths:
@@ -4007,7 +4006,6 @@ def display_export_options(results, include_general_exports: bool = True):
                                 logo_path = None
                                 try:
                                     candidate_paths = [
-                                        '/home/jordano/PeptiDIA/assets/peptidia_official_logo.png',
                                         os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'peptidia_official_logo.png'),
                                     ]
                                     for _p in candidate_paths:

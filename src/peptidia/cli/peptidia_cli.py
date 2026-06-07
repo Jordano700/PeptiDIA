@@ -919,7 +919,7 @@ class PeptiDIACLI:
         print(f"\n{Colors.GREEN}💡 Search Tips:{Colors.ENDC}")
         print(f"  - Look for common patterns in filenames above")
         print(f"  - Use numbers like '001', '002', '003' to group replicates")  
-        print(f"  - Use method identifiers like 'RD201', 'EV1107', etc.")
+        print(f"  - Use method or instrument identifiers shared across the files, etc.")
         print(f"  - Each search term will create one group containing all matching files")
         
         print(f"\n{Colors.GREEN}Enter search terms to group files (one per line, empty line to finish):{Colors.ENDC}")

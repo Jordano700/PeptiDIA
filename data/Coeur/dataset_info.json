@@ -1,6 +1,6 @@
 {
   "icon": "\u2764\ufe0f",
-  "instrument": "Orbitrap Exploris 480 (DIA053)",
+  "instrument": "Orbitrap Exploris 480",
   "description": "Coeur proteomics analysis - 2 different human heart samples in triplicates",
   "available_icons": {
     "_note": "Choose any of these icons for your dataset by copying the emoji to the 'icon' field above",
@@ -152,11 +152,11 @@
   "ground_truth_mapping": {
     "_strategy": "direct_mapping",
     "_direct_rules": {
-      "Coeur_Group_A08": [
-        "Coeur_Group_A08"
+      "Coeur_Group_01": [
+        "Coeur_Group_01"
       ],
-      "Coeur_Group_A55": [
-        "Coeur_Group_A55"
+      "Coeur_Group_02": [
+        "Coeur_Group_02"
       ]
     },
     "_file_mode": "triplicates",
