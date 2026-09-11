@@ -15,7 +15,7 @@ PeptiDIA is a machine-learning framework that recovers additional peptides from 
   <img src="assets/peptidia_methodology.svg" alt="PeptiDIA methodology" width="760"/>
 </div>
 
-PeptiDIA uses **paired fast- and long-gradient acquisitions** of the same samples. Fast-gradient runs (high throughput) are searched in DIA-NN at relaxed FDR (20% / 50%) to expose a large candidate pool, while the matched long-gradient run (1% FDR) provides high-confidence **ground-truth labels**. An **XGBoost** classifier (87 DIA-NN and engineered features, with isotonic-calibrated probabilities) then recovers true peptides from new fast-gradient data at a user-controlled **reference-discordance rate (RDR)**.
+PeptiDIA uses **paired fast- and long-gradient acquisitions** of the same samples. Fast-gradient runs (high throughput) are searched in DIA-NN at relaxed FDR (20% / 50%) to expose a large candidate pool, while the matched long-gradient run (1% FDR) provides high-confidence **ground-truth labels**. An **XGBoost** classifier (86 DIA-NN and engineered features, with isotonic-calibrated probabilities) then recovers true peptides from new fast-gradient data at a user-controlled **reference-discordance rate (RDR)**.
 
 ## Quick Start (3 steps)
 
@@ -102,13 +102,13 @@ This project is licensed under the MIT License – see the [LICENSE](LICENSE) fi
 If you use PeptiDIA in your research, please cite this work:
 
 ```
-Ortona, J., Leclercq, M., Roux-Dalvai, F., & Droit, A. (2026). PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics. https://github.com/Jordano700/PeptiDIA
+Ortona, J., Leclercq, M., Roux-Dalvai, F., Routy, B., Bonnet, S., & Droit, A. (2026). PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics. https://github.com/Jordano700/PeptiDIA
 ```
 
 BibTeX format:
 ```bibtex
 @software{ortona2026peptidia,
-  author = {Ortona, Jordan and Leclercq, Micka{\"e}l and Roux-Dalvai, Florence and Droit, Arnaud},
+  author = {Ortona, Jordan and Leclercq, Micka{\"e}l and Roux-Dalvai, Florence and Routy, Bertrand and Bonnet, S{\'e}bastien and Droit, Arnaud},
   title  = {PeptiDIA: A Machine Learning Framework for Enhanced Peptide Identification in Fast-Gradient Data-Independent Acquisition Proteomics},
   year   = {2026},
   url    = {https://github.com/Jordano700/PeptiDIA},
